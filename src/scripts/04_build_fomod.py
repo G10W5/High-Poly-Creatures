@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import fnmatch
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
@@ -66,6 +67,23 @@ def load_creatures() -> list[Creature]:
     return out
 
 
+def matches(bare: str, prefixes: list[str]) -> bool:
+    """Match a vanilla-relative path against a creature's prefixes.
+
+    Prefixes are usually plain path stems (`actors/canine/character assets wolf`),
+    but the fox entry carries a wildcard (`actors/wolf/fox*.nif`), which a plain
+    startswith would never match.
+    """
+    for pfx in prefixes:
+        pfx = pfx.replace("\\", "/")
+        if any(ch in pfx for ch in "*?["):
+            if fnmatch.fnmatch(bare, pfx):
+                return True
+        elif bare.startswith(pfx):
+            return True
+    return False
+
+
 def collect(mod_folder: str, creatures: list[Creature]) -> list[Path]:
     """Every built file, attached to the creature whose prefix matches its path."""
     build = ROOT / "build" / mod_folder
@@ -81,7 +99,7 @@ def collect(mod_folder: str, creatures: list[Creature]) -> list[Path]:
         bare = rel[len("meshes/"):] if rel.startswith("meshes/") else rel
         hit = None
         for c in creatures:
-            if any(bare.startswith(pfx.replace("\\", "/")) for pfx in c.prefixes):
+            if matches(bare, c.prefixes):
                 hit = c
                 break
         if hit is None and path.suffix.lower() == ".dds":
@@ -122,7 +140,7 @@ def expand_variants(mod: str, creatures: list[Creature]) -> int:
             rel = ref.relative_to(ref_dir).as_posix().lower()
             # prefixes are written without the meshes/ root
             bare = rel[len("meshes/"):] if rel.startswith("meshes/") else rel
-            if not any(bare.startswith(pfx.replace("\\", "/")) for pfx in c.prefixes):
+            if not matches(bare, c.prefixes):
                 continue
             out = ROOT / "build" / MOD_FOLDERS[mod] / ref.relative_to(ref_dir)
             if out.exists() or out == main:

@@ -47,12 +47,48 @@ class Creature:
 # paths / config
 # --------------------------------------------------------------------------- #
 
+def _addon_keys() -> list[str]:
+    """Candidate keys for our add-on entry in context.preferences.addons.
+
+    When the file is installed as an add-on, the key is the module name. When it
+    is run from the Text Editor, Blender registers it as "__main__" and the
+    preferences collection has no such entry at all.
+    """
+    keys = []
+    for k in (__name__, __package__, "highpoly_pipeline"):
+        if k and k != "__main__" and k not in keys:
+            keys.append(k)
+    return keys
+
+
 def prefs(context):
-    return context.preferences.addons[__name__].preferences
+    """Our add-on preferences, or None when running as a plain script."""
+    addons = context.preferences.addons
+    for key in _addon_keys():
+        if key in addons:
+            p = addons[key].preferences
+            if p is not None:
+                return p
+    # last resort: any enabled add-on carrying our preferences class
+    try:
+        for key in addons.keys():
+            p = addons[key].preferences
+            if type(p).__name__ == "HPPreferences":
+                return p
+    except Exception:
+        pass
+    return None
 
 
 def project_root(context) -> Path:
-    return Path(bpy.path.abspath(prefs(context).project_root))
+    """Resolved project folder: scene override > add-on prefs > built-in default."""
+    scene_hp = getattr(context.scene, "hp", None)
+    if scene_hp is not None and str(getattr(scene_hp, "project_root", "") or "").strip():
+        return Path(bpy.path.abspath(scene_hp.project_root))
+    p = prefs(context)
+    if p is not None and str(getattr(p, "project_root", "") or "").strip():
+        return Path(bpy.path.abspath(p.project_root))
+    return Path(DEFAULT_PROJECT)
 
 
 def load_creatures(root: Path) -> list[Creature]:
@@ -683,6 +719,13 @@ class HPPreferences(bpy.types.AddonPreferences):
 
 
 class HPSettings(bpy.types.PropertyGroup):
+    project_root: bpy.props.StringProperty(
+        name="Project root",
+        subtype="DIR_PATH",
+        default="",
+        description="Folder containing config/creatures.csv. "
+                    "Leave empty to use the add-on preference (or the built-in default)",
+    )
     mod: bpy.props.EnumProperty(
         name="Mod",
         items=[("Creatures", "Creatures", ""), ("Enemies", "Enemies", "")],
@@ -739,9 +782,17 @@ class _Base:
 
     def _creature(self):
         root = project_root(bpy.context)
+        if not (root / "config" / "creatures.csv").is_file():
+            raise RuntimeError(
+                f"no config/creatures.csv under {root} - "
+                "set Project root in the High Poly panel"
+            )
         c = find_creature(root, self.settings.mod, self.settings.creature)
         if not c:
-            raise RuntimeError("creature not selected")
+            raise RuntimeError(
+                f"creature {self.settings.creature!r} not found for mod "
+                f"{self.settings.mod!r} in config/creatures.csv"
+            )
         return root, c
 
 
@@ -903,9 +954,33 @@ class HP_PT_panel(bpy.types.Panel):
         layout = self.layout
         s = context.scene.hp
 
+        # Project root first: everything below depends on it, and it is the one
+        # thing that breaks when the file is run from the Text Editor instead of
+        # being installed as an add-on (no preferences entry for "__main__").
+        root = None
+        err = ""
+        try:
+            root = project_root(context)
+            root_ok = (root / "config" / "creatures.csv").is_file()
+        except Exception as exc:
+            root_ok = False
+            err = str(exc)
+
+        box = layout.box()
+        box.prop(s, "project_root", text="Project root (blank = default)")
+        if root is None:
+            box.label(text=f"Error: {err[:60]}", icon="ERROR")
+        elif root_ok:
+            box.label(text=f"using {root}", icon="CHECKMARK")
+        else:
+            box.label(text="no config/creatures.csv here:", icon="ERROR")
+            box.label(text=str(root))
+
         col = layout.column(align=True)
         col.prop(s, "mod")
         col.prop(s, "creature")
+        if root_ok and not any(c.mod == s.mod for c in load_creatures(root)):
+            col.label(text="No creatures for this mod - check Project root", icon="ERROR")
 
         box = layout.box()
         box.label(text="1. Vanilla", icon="MESH_DATA")
@@ -935,7 +1010,7 @@ class HP_PT_panel(bpy.types.Panel):
 
         box = layout.box()
         box.label(text="3. Rig", icon="ARMATURE_DATA")
-        box.operator("hp.transfer_weights", icon="VGROUP_VERTEX")
+        box.operator("hp.transfer_weights", icon="GROUP_VERTEX")
 
         box = layout.box()
         box.label(text="4. Material", icon="MATERIAL")
@@ -977,16 +1052,32 @@ CLASSES = (
 )
 
 
+def _classes():
+    """AddonPreferences only resolves when this file is an installed add-on.
+
+    Run from the Text Editor, __name__ is "__main__" and Blender would key the
+    preferences to an add-on that does not exist - which is exactly the KeyError
+    that used to break the panel. Everything else works either way.
+    """
+    if __name__ == "__main__":
+        return tuple(c for c in CLASSES if c is not HPPreferences)
+    return CLASSES
+
+
 def register():
-    for cls in CLASSES:
+    for cls in _classes():
         bpy.utils.register_class(cls)
     bpy.types.Scene.hp = bpy.props.PointerProperty(type=HPSettings)
 
 
 def unregister():
-    del bpy.types.Scene.hp
-    for cls in reversed(CLASSES):
-        bpy.utils.unregister_class(cls)
+    if hasattr(bpy.types.Scene, "hp"):
+        del bpy.types.Scene.hp
+    for cls in reversed(_classes()):
+        try:
+            bpy.utils.unregister_class(cls)
+        except RuntimeError:
+            pass
 
 
 if __name__ == "__main__":
