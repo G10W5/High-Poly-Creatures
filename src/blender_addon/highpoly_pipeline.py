@@ -15,6 +15,7 @@ import math
 import os
 import re
 from dataclasses import dataclass
+import mathutils
 from mathutils import Vector
 from pathlib import Path
 
@@ -223,6 +224,20 @@ def apply_transform(obj, location=False, rotation=False, scale=False):
     bpy.ops.object.transform_apply(location=location, rotation=rotation, scale=scale)
 
 
+def set_euler(obj, x: float, y: float, z: float):
+    """Assign a rotation that will actually be applied.
+
+    The glTF importer leaves objects in rotation_mode QUATERNION, where
+    rotation_euler is only written to a dormant field - transform_apply then
+    bakes the (identity) quaternion and the rotation silently does nothing.
+    Switching the mode first also converts the current rotation, so nothing is
+    lost; the object's transform is identity after a fit anyway.
+    """
+    if obj.rotation_mode != "XYZ":
+        obj.rotation_mode = "XYZ"
+    obj.rotation_euler = (x, y, z)
+
+
 def world_bbox(obj):
     pts = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
     lo = Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
@@ -317,7 +332,48 @@ def do_import_model(context, creature: Creature, root: Path, filepath: Path | No
         if extra is not model:
             extra.hide_set(True)
             extra.hide_render = True
-    return path.name
+
+    # Take it straight to vanilla size/orientation: a raw GLB is ~1/140th of the
+    # wolf and lies on the wrong axis, which looks alarming when it first lands.
+    try:
+        note = " | " + do_fit(context, context.scene.hp)
+    except Exception as exc:
+        note = f" | no fit yet: {exc}"
+    return path.name + note
+
+
+def _clear_previous_fit(model) -> bool:
+    """Undo the transform a previous Auto Fit baked into the vertices.
+
+    Fit is destructive - rotation, scale and offset are applied straight to the
+    mesh - so without this every press would stack a new transform on the old
+    one and changing Rotate X could never undo the -90 the first fit applied.
+    Reversing the recorded transform (exact inverse: un-offset, un-scale,
+    un-rotate) makes fit idempotent while keeping decimation and skin weights.
+    """
+    rot = model.get("hp_fit_rot")
+    if not rot:
+        return False
+    scale = tuple(model.get("hp_fit_scale") or (1.0, 1.0, 1.0))
+    off = tuple(model.get("hp_fit_offset") or (0.0, 0.0, 0.0))
+
+    select_only([model])
+    model.location = (-off[0], -off[1], -off[2])
+    apply_transform(model, location=True)
+
+    model.scale = tuple((1.0 / s) if abs(s) > 1e-9 else 1.0 for s in scale)
+    apply_transform(model, scale=True)
+
+    euler = mathutils.Euler(
+        (math.radians(rot[0]), math.radians(rot[1]), math.radians(rot[2])), "XYZ")
+    inv = euler.to_matrix().inverted().to_euler("XYZ")
+    set_euler(model, inv.x, inv.y, inv.z)
+    apply_transform(model, rotation=True)
+
+    for key in ("hp_fit_rot", "hp_fit_scale", "hp_fit_offset"):
+        if key in model:
+            del model[key]
+    return True
 
 
 def do_fit(context, settings) -> str:
@@ -327,7 +383,12 @@ def do_fit(context, settings) -> str:
         raise RuntimeError("load the vanilla reference and a model first")
     body, model = body[0], model[0]
 
-    model.rotation_euler = (
+    had_weights = any(
+        g.weight > 0.0 for v in model.data.vertices for g in v.groups) if model.vertex_groups else False
+    _clear_previous_fit(model)
+
+    set_euler(
+        model,
         math.radians(settings.rotate_x),
         0.0,
         math.radians(settings.rotate_z),
@@ -345,6 +406,7 @@ def do_fit(context, settings) -> str:
     apply_transform(model, scale=True)
 
     axes = ""
+    fx = fy = fz = 1.0
     if settings.fit_mode == "AXIS":
         # Match the vanilla silhouette per axis so the body still fits animations,
         # doorframes and hitboxes. Uniform keeps the AI model's own proportions.
@@ -365,11 +427,20 @@ def do_fit(context, settings) -> str:
     model.location.x += vc.x - mc.x
     model.location.y += vc.y - mc.y
     model.location.z += vlo.z - mlo.z
+    off = tuple(float(v) for v in model.location)
     apply_transform(model, location=True)
+
+    # Record exactly what was baked in, so the next Auto Fit can reverse it.
+    model["hp_fit_rot"] = (float(settings.rotate_x), 0.0, float(settings.rotate_z))
+    model["hp_fit_scale"] = (float(scale * fx), float(scale * fy), float(scale * fz))
+    model["hp_fit_offset"] = off
 
     mlo, mhi = world_bbox(model)
     md = mhi - mlo
-    return f"scale {scale:.2f}, dims {md.x:.2f} x {md.y:.2f} x {md.z:.2f}{axes}"
+    note = " | already weighted: re-run Transfer Weights" if had_weights else ""
+    return (
+        f"scale {scale:.2f}, dims {md.x:.2f} x {md.y:.2f} x {md.z:.2f}{axes}{note}"
+    )
 
 
 def do_decimate(context, settings) -> str:
@@ -732,6 +803,21 @@ def run_full(context, settings):
 # properties
 # --------------------------------------------------------------------------- #
 
+def _refit_update(self, context):
+    """Rotate X / Rotate Z / Scale / Fit are live: re-fit the moment they change.
+
+    Fitting only re-applies a reversible transform (~10 ms even on a 273k-tri
+    model), so dragging a slider can move the model instead of silently doing
+    nothing until a button is pressed.
+    """
+    try:
+        if not objects_with("model") or not objects_with("vanilla_body"):
+            return  # nothing to fit yet - import runs the fit itself
+        self.status = do_fit(context, self)
+    except Exception as exc:
+        self.status = f"fit: {exc}"
+
+
 def creature_items(self, context):
     try:
         root = project_root(context)
@@ -782,9 +868,21 @@ class HPSettings(bpy.types.PropertyGroup):
         name="Target Tris", default=0, min=0,
         description="0 = use the multiplier",
     )
-    rotate_x: bpy.props.FloatProperty(name="Rotate X", default=-90.0)
-    rotate_z: bpy.props.FloatProperty(name="Rotate Z", default=0.0)
-    scale_multiplier: bpy.props.FloatProperty(name="Scale", default=1.0, min=0.01)
+    rotate_x: bpy.props.FloatProperty(
+        name="Rotate X", default=-90.0,
+        description="Turns the imported model onto its feet - takes effect immediately",
+        update=_refit_update,
+    )
+    rotate_z: bpy.props.FloatProperty(
+        name="Rotate Z", default=0.0,
+        description="Turns the model left/right - takes effect immediately",
+        update=_refit_update,
+    )
+    scale_multiplier: bpy.props.FloatProperty(
+        name="Scale", default=1.0, min=0.01,
+        description="Extra multiplier on top of the automatic size match - takes effect immediately",
+        update=_refit_update,
+    )
     fit_mode: bpy.props.EnumProperty(
         name="Fit",
         items=[
@@ -794,6 +892,7 @@ class HPSettings(bpy.types.PropertyGroup):
              "One scale factor on all axes - the model keeps its own shape"),
         ],
         default="AXIS",
+        update=_refit_update,
     )
     keep_fur: bpy.props.BoolProperty(
         name="Keep vanilla fur shell",
