@@ -10,6 +10,7 @@ bl_info = {
 
 import bpy
 import csv
+import functools
 import math
 import os
 import re
@@ -129,6 +130,42 @@ def is_body_file(name: str) -> bool:
     return not any(part in name.lower() for part in NON_BODY)
 
 
+# --------------------------------------------------------------------------- #
+# PyNifly (the NIF import/export add-on this pipeline drives)
+# --------------------------------------------------------------------------- #
+
+PNIFLY_HINT = (
+    "PyNifly is not available. Edit > Preferences > Add-ons > Install from Disk, "
+    "pick tools/pynifly/io_scene_nifly/__init__.py (or enable 'Import-Export: niffly' "
+    "if it is already listed), then run this again."
+)
+
+
+def pynifly_ready() -> bool:
+    """True when the NIF import operator is registered.
+
+    bpy.ops.<module>.<name> attribute access is lazy, so hasattr() lies - only a
+    real call tells us the operator exists.
+    """
+    try:
+        bpy.ops.import_scene.pynifly.poll()
+        return True
+    except Exception:
+        return False
+
+
+def ensure_pynifly() -> bool:
+    """Try to switch PyNifly on for this session, then report whether it worked."""
+    if pynifly_ready():
+        return True
+    try:
+        import addon_utils
+        addon_utils.enable("io_scene_nifly", default_set=True, persistent=True)
+    except Exception:
+        pass
+    return pynifly_ready()
+
+
 def main_nif(root: Path, creature: Creature) -> Path | None:
     files = [p for p in ref_dir(root, creature).rglob("*.nif") if is_body_file(p.name)]
     if not files:
@@ -223,6 +260,8 @@ def ensure_vertex_color(obj):
 # --------------------------------------------------------------------------- #
 
 def do_load_vanilla(context, creature: Creature, root: Path) -> str:
+    if not ensure_pynifly():
+        raise RuntimeError(PNIFLY_HINT)
     clear_pipeline()
     nif = main_nif(root, creature)
     if not nif:
@@ -655,6 +694,8 @@ def do_export(context, creature: Creature, root: Path, keep_fur=True, keep_extra
         o.hide_set(True)
         o.hide_render = True
 
+    if not ensure_pynifly():
+        raise RuntimeError(PNIFLY_HINT)
     try:
         select_only(selection)
         bpy.ops.export_scene.pynifly(filepath=str(out), target_game="SKYRIMSE")
@@ -777,6 +818,29 @@ class HPSettings(bpy.types.PropertyGroup):
 # operators
 # --------------------------------------------------------------------------- #
 
+def _guard(fn):
+    """Report a failed step as a clean operator message instead of a traceback.
+
+    Blender shows uncaught exceptions as a red Python traceback dialog, which is
+    unhelpful here - the cause is always something the panel can explain.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(self, context):
+        try:
+            return fn(self, context)
+        except Exception as exc:
+            msg = str(exc) or exc.__class__.__name__
+            try:
+                self.settings.status = f"FAILED: {msg}"
+            except Exception:
+                pass
+            self.report({"ERROR"}, msg)
+            return {"CANCELLED"}
+
+    return wrapper
+
+
 class _Base:
     bl_options = {"REGISTER", "UNDO"}
 
@@ -796,6 +860,21 @@ class _Base:
         return root, c
 
 
+class HP_OT_enable_pynifly(bpy.types.Operator):
+    bl_idname = "hp.enable_pynifly"
+    bl_label = "Enable PyNifly"
+    bl_description = "Switch on the PyNifly add-on (NIF import/export) this pipeline needs"
+    bl_options = {"REGISTER"}
+
+    @_guard
+    def execute(self, context):
+        if ensure_pynifly():
+            self.report({"INFO"}, "PyNifly enabled - NIF import/export available")
+            return {"FINISHED"}
+        self.report({"ERROR"}, PNIFLY_HINT)
+        return {"CANCELLED"}
+
+
 class HP_OT_load_vanilla(_Base, bpy.types.Operator):
     bl_idname = "hp.load_vanilla"
     bl_label = "Load Vanilla Reference"
@@ -804,6 +883,7 @@ class HP_OT_load_vanilla(_Base, bpy.types.Operator):
     def settings(self):
         return bpy.context.scene.hp
 
+    @_guard
     def execute(self, context):
         root, c = self._creature()
         name = do_load_vanilla(context, c, root)
@@ -829,6 +909,7 @@ class HP_OT_import_model(_Base, bpy.types.Operator):
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
 
+    @_guard
     def execute(self, context):
         root, c = self._creature()
         name = do_import_model(context, c, root, Path(self.filepath) if self.filepath else None)
@@ -844,6 +925,7 @@ class HP_OT_fit(_Base, bpy.types.Operator):
     def settings(self):
         return bpy.context.scene.hp
 
+    @_guard
     def execute(self, context):
         self.settings.status = do_fit(context, self.settings)
         return {"FINISHED"}
@@ -857,6 +939,7 @@ class HP_OT_decimate(_Base, bpy.types.Operator):
     def settings(self):
         return bpy.context.scene.hp
 
+    @_guard
     def execute(self, context):
         self.settings.status = do_decimate(context, self.settings)
         return {"FINISHED"}
@@ -870,6 +953,7 @@ class HP_OT_transfer_weights(_Base, bpy.types.Operator):
     def settings(self):
         return bpy.context.scene.hp
 
+    @_guard
     def execute(self, context):
         self.settings.status = do_transfer_weights(context)
         return {"FINISHED"}
@@ -883,6 +967,7 @@ class HP_OT_setup_material(_Base, bpy.types.Operator):
     def settings(self):
         return bpy.context.scene.hp
 
+    @_guard
     def execute(self, context):
         root, c = self._creature()
         self.settings.status = do_setup_material(context, c, root)
@@ -897,6 +982,7 @@ class HP_OT_validate(_Base, bpy.types.Operator):
     def settings(self):
         return bpy.context.scene.hp
 
+    @_guard
     def execute(self, context):
         self.settings.status = do_validate(context)
         return {"FINISHED"}
@@ -910,6 +996,7 @@ class HP_OT_export(_Base, bpy.types.Operator):
     def settings(self):
         return bpy.context.scene.hp
 
+    @_guard
     def execute(self, context):
         root, c = self._creature()
         self.settings.status = "exported: " + do_export(
@@ -926,6 +1013,7 @@ class HP_OT_run_all(_Base, bpy.types.Operator):
     def settings(self):
         return bpy.context.scene.hp
 
+    @_guard
     def execute(self, context):
         try:
             report = run_full(context, self.settings)
@@ -975,6 +1063,11 @@ class HP_PT_panel(bpy.types.Panel):
         else:
             box.label(text="no config/creatures.csv here:", icon="ERROR")
             box.label(text=str(root))
+
+        if not pynifly_ready():
+            warn = layout.box()
+            warn.label(text="PyNifly not enabled - NIF import/export off", icon="ERROR")
+            warn.operator("hp.enable_pynifly")
 
         col = layout.column(align=True)
         col.prop(s, "mod")
@@ -1039,6 +1132,7 @@ class HP_PT_panel(bpy.types.Panel):
 CLASSES = (
     HPPreferences,
     HPSettings,
+    HP_OT_enable_pynifly,
     HP_OT_load_vanilla,
     HP_OT_import_model,
     HP_OT_fit,
