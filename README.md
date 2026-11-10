@@ -59,15 +59,30 @@ the steps, or hit **Run Full Pipeline**:
 | Step | What it does |
 | --- | --- |
 | 1. Load Vanilla | imports the reference body NIF, tags body / fur / armature |
-| 2. Import Model | drops the GLB/FBX/OBJ from `incoming/`, then **Auto Fit** (rotate, scale to vanilla bbox, optional per-axis silhouette match) and **Decimate** (multi-pass collapse to N tris) |
+| 2. Import Model | drops the GLB/FBX/OBJ from `incoming/`, then **Auto Orient** (picks the rotation that lines the model up with the vanilla body) and **Decimate** (multi-pass collapse to N tris) |
 | 3. Transfer Weights | creates the vanilla bone groups, data-transfers weights, drops dead groups, limits to 4 influences |
-| 4. Material | reuses the vanilla Skyrim shader nodes, points them at the AI diffuse and a generated normal+gloss map, writes 2K PNGs |
-| 5. Fur shells | builds the FluffyWorks-style fur stack (see below) |
-| 6. Export | hides the geometry being replaced, exports NIF + textures to `build/<Mod>/` at the vanilla path, saves a work `.blend` |
+| 4. Surface | relaxes the decimated mesh and shades it smooth - **no extra triangles** |
+| 5. Material | reuses the vanilla Skyrim shader nodes, points them at the AI diffuse and a generated normal+gloss map, writes 2K PNGs |
+| 6. Fur shells | builds the FluffyWorks-style fur stack (see below) |
+| 7. Export | hides the geometry being replaced, exports NIF + textures to `build/<Mod>/` at the vanilla path, saves a work `.blend` |
 
 Settings: target tri budget (x vanilla), rotation, fit mode, texture size (1K/2K/4K),
-fur shells (count / spacing / mesh detail), keep the vanilla fur shell, keep other
-vanilla meshes.
+surface smoothing, fur shells (count / spacing / mesh detail), keep the vanilla fur
+shell, keep other vanilla meshes.
+
+### Smoother without more polygons
+
+Decimating a 500k-triangle AI model down to the Skyrim budget leaves hard
+facets.  Two things fix that without spending a single triangle:
+
+* **Smooth** (a Laplacian pass) relaxes the shape - the surface goes soft and
+  the detail comes back from the normal map;
+* **Shade smooth** averages the normals across the faces, so the body shades
+  as one continuous surface instead of a mosaic of flat triangles.  The NIF
+  stores the normals, so this is free.
+
+If it still looks too soft, raise *Target x Vanilla* instead - that is the
+only knob that really buys detail.
 
 ### The bind pose
 
@@ -102,7 +117,10 @@ uses:
   layers keep the whole coat and the outer ones only the brightest strands -
   that taper is what makes it read as fur;
 * the strand mask lives in the alpha channel of `<creature>_hp_shell.dds`, the
-  coat colour in RGB, with no fur on the dark parts (eyes, nose).
+  coat colour in RGB, with no fur on the dark parts (eyes, nose);
+* each layer is **wrapped onto the body** first, so it follows the silhouette
+  instead of poking through it - a shell that does not hug the body ends up
+  buried inside it (invisible) or poking out in shards.
 
 The threshold is written by the exporter from the material's Skyrim shader node
 group (`Alpha Property` ▸ `Alpha Threshold`) - the material's custom properties

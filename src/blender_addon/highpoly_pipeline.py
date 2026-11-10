@@ -710,6 +710,45 @@ def _model_edges(mesh) -> list[tuple[int, int]]:
     return edges
 
 
+def do_smooth_shading(context, settings) -> str:
+    """Round off the decimation and shade the mesh smooth - without any polys.
+
+    Two separate tricks:
+
+      * a light Laplacian pass takes the hard edges off the decimated mesh
+        (the shape gets slightly softer, the detail comes back from the
+        normal map);
+      * shade smooth makes the exported vertex normals average across the
+        faces, so the surface shades as one smooth body instead of a mosaic
+        of flat triangles.  The NIF stores the normals, so this costs
+        nothing in triangles.
+    """
+    model = objects_with("model")
+    if not model:
+        raise RuntimeError("no model loaded")
+    model = model[0]
+
+    amount = float(settings.smooth_amount)
+    if amount > 0.0:
+        mod = model.modifiers.new("HP_Smooth", "SMOOTH")
+        mod.factor = amount
+        mod.iterations = 2
+        select_only([model])
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+
+    if settings.shade_smooth:
+        select_only([model])
+        try:
+            bpy.ops.object.shade_smooth()
+        except Exception:
+            for poly in model.data.polygons:
+                poly.use_smooth = True
+        model.data.update()
+
+    return (f"smoothed (amount {amount:.2f}), "
+            f"shade smooth {'on' if settings.shade_smooth else 'off'}")
+
+
 def do_decimate(context, settings) -> str:
     body = objects_with("vanilla_body")
     model = objects_with("model")
@@ -1056,7 +1095,11 @@ def _make_shell_image(diffuse_img, name: str, seed: int = 7):
 
 
 def _make_shell_base(context, model, target_tris: int):
-    """A decimated, smoothed copy of the model to build the shell stack from."""
+    """A decimated copy of the model to build the shell stack from.
+
+    Deliberately *not* smoothed: the shells are wrapped onto the body after
+    this, and a smoothed copy would sink into the body instead of hugging it.
+    """
     base = model.copy()
     base.data = model.data.copy()
     base.name = "HP_ShellBase"
@@ -1080,14 +1123,6 @@ def _make_shell_base(context, model, target_tris: int):
         bpy.ops.object.modifier_apply(modifier=mod.name)
         if tri_count(base) >= now:
             break
-
-    # smooth away the spikes a collapse leaves behind, otherwise the shells
-    # poke through the body in places
-    smooth = base.modifiers.new("HP_ShellSmooth", "SMOOTH")
-    smooth.factor = 0.5
-    smooth.iterations = 3
-    select_only([base])
-    bpy.ops.object.modifier_apply(modifier=smooth.name)
     return base
 
 
@@ -1165,6 +1200,8 @@ def do_make_shells(context, creature: Creature, root: Path, settings) -> str:
     spacing = float(settings.shell_spacing)
 
     made = []
+    body = objects_with("vanilla_body")
+    body = body[0] if body else None
     for layer in range(1, count + 1):
         mat = _shell_material(model, shell_png, layer)
         shell = base.copy()
@@ -1173,11 +1210,25 @@ def do_make_shells(context, creature: Creature, root: Path, settings) -> str:
         shell.name = f"{SHELL_PREFIX}_L{layer:02d}"
         shell.data.materials.clear()
         shell.data.materials.append(mat)
-        mesh = shell.data
-        for v in mesh.vertices:
-            v.co += v.normal * (layer * spacing)
-        mesh.update()
+        # link first: applying a modifier needs the object in the view layer
         context.collection.objects.link(shell)
+
+        # Wrap the shell onto the body so it follows the silhouette instead of
+        # poking through it in shards, then push it out along the surface
+        # normal by the layer's distance.  That is what makes a fur layer.
+        if body is not None:
+            wrap = shell.modifiers.new("HP_ShellWrap", "SHRINKWRAP")
+            wrap.target = body
+            wrap.wrap_method = "NEAREST_SURFACEPOINT"
+            wrap.offset = layer * spacing
+            select_only([shell])
+            bpy.ops.object.modifier_apply(modifier=wrap.name)
+        else:
+            mesh = shell.data
+            for v in mesh.vertices:
+                v.co += v.normal * (layer * spacing)
+            mesh.update()
+
         tag([shell], "shell")
         shell["hp_shell_layer"] = layer
         made.append(shell)
@@ -1346,6 +1397,7 @@ def run_full(context, settings):
     log.append("import: " + do_import_model(context, creature, root))
     log.append("fit: " + do_fit(context, settings))
     log.append("decimate: " + do_decimate(context, settings))
+    log.append("surface: " + do_smooth_shading(context, settings))
     log.append("rig: " + do_transfer_weights(context))
     log.append("material: " + do_setup_material(context, creature, root))
     log.append("shells: " + do_make_shells(context, creature, root, settings))
@@ -1480,6 +1532,17 @@ class HPSettings(bpy.types.PropertyGroup):
     shell_tris: bpy.props.IntProperty(
         name="Shell tris", default=3000, min=500, max=20000,
         description="Triangle budget for the mesh each fur layer is built from",
+    )
+    smooth_amount: bpy.props.FloatProperty(
+        name="Smooth", default=0.3, min=0.0, max=1.0,
+        description="How hard the decimated mesh is relaxed. 0 = keep the "
+                    "decimated shape, 1 = very soft. Costs no triangles",
+    )
+    shade_smooth: bpy.props.BoolProperty(
+        name="Shade smooth", default=True,
+        description="Average the normals across the faces so the surface "
+                    "shades smoothly. Costs no triangles - the detail comes "
+                    "from the normal map",
     )
     texture_size: bpy.props.EnumProperty(
         name="Texture size",
@@ -1637,6 +1700,20 @@ class HP_OT_transfer_weights(_Base, bpy.types.Operator):
     @_guard
     def execute(self, context):
         self.settings.status = do_transfer_weights(context)
+        return {"FINISHED"}
+
+
+class HP_OT_smooth_shading(_Base, bpy.types.Operator):
+    bl_idname = "hp.smooth_shading"
+    bl_label = "Smooth Shading"
+
+    @property
+    def settings(self):
+        return bpy.context.scene.hp
+
+    @_guard
+    def execute(self, context):
+        self.settings.status = do_smooth_shading(context, self.settings)
         return {"FINISHED"}
 
 
@@ -1804,6 +1881,13 @@ class HP_PT_panel(bpy.types.Panel):
         box.operator("hp.transfer_weights", icon="GROUP_VERTEX")
 
         box = layout.box()
+        box.label(text="3b. Surface", icon="MOD_SMOOTH")
+        box.prop(s, "smooth_amount")
+        box.prop(s, "shade_smooth")
+        box.operator("hp.smooth_shading", icon="MOD_SMOOTH")
+        box.label(text="no extra triangles", icon="INFO")
+
+        box = layout.box()
         box.label(text="4. Material", icon="MATERIAL")
         box.prop(s, "texture_size")
         box.operator("hp.setup_material", icon="TEXTURE")
@@ -1847,6 +1931,7 @@ CLASSES = (
     HP_OT_fit,
     HP_OT_decimate,
     HP_OT_transfer_weights,
+    HP_OT_smooth_shading,
     HP_OT_make_shells,
     HP_OT_setup_material,
     HP_OT_validate,

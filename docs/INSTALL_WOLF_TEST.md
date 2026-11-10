@@ -70,10 +70,11 @@ own wolf NIFs will still replace ours — disable FluffyWorks for the test.
 | Wolf looks high poly, fur detail crisp, walks/runs/attacks normally | success |
 | Purple or black body | the diffuse texture is missing from `<Data>\textures\actors\wolf\` |
 | Fur looks like a fuzzy halo around a smooth body | the shell layers are there but the strand mask is too sparse — lower `Shell spacing` or raise `Fur shells` |
+| Flat shards poking out of the body | the shell layers do not hug the body — they are wrapped on now, so this means an old build |
 | Wolf frozen in a T-pose or sliding without legs moving | weights/skinning broken |
 | Body invisible, only the fur shell shows | mesh or NIF corrupt |
 | Game crashes on spawn | NIF rejected — tell me and I will check the block layout |
-| Fur pokes through the body in places | the shell base mesh is too coarse — raise `Shell tris` |
+| Surface looks faceted / spiky | raise `Smooth` in the *Surface* section (free) or `Target x Vanilla` (costs triangles) |
 | Vanilla fluff shell floating off the body | `Keep vanilla fur shell` is on — turn it off (it is off by default; that shell was modelled for the vanilla body) |
 
 ## How the fur works
@@ -81,7 +82,8 @@ own wolf NIFs will still replace ours — disable FluffyWorks for the test.
 The fur is a stack of **8 alpha-tested shell layers** (`HP_Shell_L01` …
 `HP_Shell_L08`), built the way FluffyWorks does it:
 
-* each layer is a copy of the body, pushed out along the vertex normals
+* each layer is a copy of the body, **wrapped onto the body** so it follows
+  the silhouette and then pushed out along the surface normal
   (`Shell spacing`, 0.2 units = 2 mm per layer, so 1.6 units of fur in total),
 * each layer has its **own alpha threshold** — 15, 30, 45 … 120 — so the inner
   layers keep almost the whole coat while the outer ones only keep the
@@ -96,6 +98,22 @@ Tuning in the add-on (N-panel ▸ *Fur shells*):
 | `Fur shells` | number of layers (0 = no fur, max 16) |
 | `Shell spacing` | distance between layers = fur length |
 | `Shell tris` | how fine the shell base mesh is (higher = smoother, bigger file) |
+
+If the fur is not visible at all, check that `wolf_hp_shell.dds` is in
+`<Data>\textures\actors\wolf\` — without it the shells have no strand mask and
+render as a plain skin.
+
+## Smoother without more triangles
+
+The *Surface* section has two knobs that cost no triangles:
+
+| Setting | Effect |
+| --- | --- |
+| `Smooth` | relaxes the decimated mesh (Laplacian), the surface goes soft and the normal map brings the detail back |
+| `Shade smooth` | averages the normals across the faces so the body shades as one surface instead of flat triangles |
+
+If it still looks too soft, raise *Target x Vanilla* — that is the only knob
+that really buys geometry.
 
 ## Rollback
 
