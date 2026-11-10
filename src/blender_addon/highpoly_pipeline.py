@@ -1,4 +1,4 @@
-bl_info = {
+﻿bl_info = {
     "name": "High Poly Creature Pipeline",
     "author": "High Poly Creature Overhaul",
     "version": (1, 0, 0),
@@ -494,6 +494,183 @@ def do_fit(context, settings) -> str:
         f"scale {scale:.2f}, dims {md.x:.2f} x {md.y:.2f} x {md.z:.2f}"
         f"{axes}{orient_note}{note}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# fur cards
+# --------------------------------------------------------------------------- #
+
+def do_make_fur(context, creature: Creature, root: Path, settings) -> str:
+    """Scatter hair cards over the body - fur that stands off the skin.
+
+    The shell layers cannot do this on a high poly body: a layer coarse enough
+    to be affordable cuts through the body and shows up as flat plates, and a
+    layer dense enough to hug it costs as much as the body itself (five
+    layers of a 20k triangle wolf is 12 MB of NIF).
+
+    Hair cards have neither problem.  Every strand is a small tapered quad
+    standing off the skin, rooted on a vertex of the body and weighted to the
+    same bones, so it follows the animation.  Six thousand strands are 12k
+    triangles - about a megabyte.
+    """
+    import numpy as np
+
+    model = objects_with("model")
+    if not model:
+        raise RuntimeError("no model loaded")
+    model = model[0]
+
+    count = int(settings.fur_count)
+    delete_role("fur")
+    if count <= 0:
+        return "fur: off"
+
+    mesh = model.data
+    if not mesh.polygons:
+        raise RuntimeError("the model has no faces")
+
+    matrix = model.matrix_world
+    verts = np.array([(matrix @ v.co)[:] for v in mesh.vertices], dtype=np.float64)
+    normals = np.array([(matrix @ v.normal.to_3d())[:] for v in mesh.vertices],
+                       dtype=np.float64)
+
+    # the triangles, with their area, so the strands spread evenly
+    tris = []
+    areas = []
+    for poly in mesh.polygons:
+        ids = list(poly.vertices)
+        for i in range(1, len(ids) - 1):
+            a, b, c = ids[0], ids[i], ids[i + 1]
+            area = 0.5 * np.linalg.norm(
+                np.cross(verts[b] - verts[a], verts[c] - verts[a]))
+            if area > 1e-9:
+                tris.append((a, b, c))
+                areas.append(area)
+    if not tris:
+        raise RuntimeError("the model has no usable faces")
+
+    rng = np.random.default_rng(int(settings.fur_seed))
+    areas = np.asarray(areas, dtype=np.float64)
+    picks = rng.choice(len(tris), size=count, p=areas / areas.sum())
+
+    length = float(settings.fur_length)
+    width = float(settings.fur_width)
+    lay = float(settings.fur_lay)
+
+    new_verts = []
+    new_faces = []
+    new_uvs = []
+    root_of = []
+
+    uv_layer = mesh.uv_layers[0] if mesh.uv_layers else None
+    uv_of_vertex: dict[int, tuple] = {}
+    if uv_layer:
+        acc: dict[int, list] = {}
+        for loop in mesh.loops:
+            vid = loop.vertex_index
+            u, v = uv_layer.data[loop.index].uv
+            prev = acc.get(vid, [0.0, 0.0, 0])
+            prev[0] += u
+            prev[1] += v
+            prev[2] += 1
+            acc[vid] = prev
+        uv_of_vertex = {k: (v[0] / v[2], v[1] / v[2]) for k, v in acc.items()}
+
+    for pick in picks:
+        ia, ib, ic = tris[pick]
+        r1, r2 = rng.random(2)
+        if r1 + r2 > 1.0:
+            r1, r2 = 1.0 - r1, 1.0 - r2
+        wa, wb, wc = 1.0 - r1 - r2, r1, r2
+        root = verts[ia] * wa + verts[ib] * wb + verts[ic] * wc
+        normal = normals[ia] * wa + normals[ib] * wb + normals[ic] * wc
+        norm = np.linalg.norm(normal)
+        if norm < 1e-9:
+            continue
+        normal = normal / norm
+
+        # the fur lies back along the body: gravity projected onto the surface
+        down = np.array([0.0, 0.0, -1.0])
+        tangent = down - normal * float(np.dot(down, normal))
+        tnorm = np.linalg.norm(tangent)
+        tangent = tangent / tnorm if tnorm > 1e-6 else normal
+        direction = normal * (1.0 - lay) + tangent * lay
+        dnorm = np.linalg.norm(direction)
+        if dnorm < 1e-9:
+            continue
+        direction = direction / dnorm
+
+        side = np.cross(direction, normal)
+        snorm = np.linalg.norm(side)
+        if snorm < 1e-9:
+            continue
+        side = side / snorm
+
+        strand_length = length * (0.55 + 0.75 * rng.random())
+        half = width * (0.6 + 0.8 * rng.random()) * 0.5
+        tip_half = half * 0.25
+
+        base = root - direction * (length * 0.05)
+        tip = base + direction * strand_length
+        bl = base + side * half
+        br = base - side * half
+        tl = tip + side * tip_half
+        tr = tip - side * tip_half
+
+        i0 = len(new_verts)
+        new_verts.extend([bl, br, tl, tr])
+        new_faces.append((i0, i0 + 1, i0 + 3))
+        new_faces.append((i0, i0 + 3, i0 + 2))
+        uv = uv_of_vertex.get(ia, (0.0, 0.0))
+        new_uvs.extend([uv, uv, uv, uv])
+        root_of.append(ia)
+
+    if not new_verts:
+        return "fur: nothing generated"
+
+    fur_mesh = bpy.data.meshes.new(f"{creature.name}_Fur")
+    fur_mesh.from_pydata([tuple(v) for v in new_verts], [], new_faces)
+    fur_mesh.update()
+    uv_new = fur_mesh.uv_layers.new(name="UVMap")
+    for i, uv in enumerate(new_uvs):
+        uv_new.data[i].uv = uv
+    for poly in fur_mesh.polygons:
+        poly.use_smooth = True
+
+    fur_obj = bpy.data.objects.new(f"{creature.name}_Fur", fur_mesh)
+    context.collection.objects.link(fur_obj)
+
+    # the strands follow the bones of the vertex they are rooted on
+    groups = {}
+    for i, root_vertex in enumerate(root_of):
+        base = i * 4
+        for vid in range(base, base + 4):
+            for g in mesh.vertices[root_vertex].groups:
+                name = model.vertex_groups[g.group].name
+                if name.startswith("SBP_"):
+                    continue
+                if name not in groups:
+                    groups[name] = fur_obj.vertex_groups.new(name=name)
+                groups[name].add([vid], g.weight, "REPLACE")
+
+    # the fur uses the body's material so it matches the coat
+    mat = next((m for m in model.data.materials if m), None)
+    if mat is not None:
+        fur_obj.data.materials.append(mat)
+
+    # the strands have to be skinned like the body, or they stay behind while
+    # the creature walks
+    arms = objects_with("vanilla_armature")
+    if arms:
+        arm = arms[0]
+        fur_obj.parent = arm
+        fur_obj.matrix_parent_inverse = arm.matrix_world.inverted()
+        arm_mod = fur_obj.modifiers.new("Armature", "ARMATURE")
+        arm_mod.object = arm
+
+    tag([fur_obj], "fur")
+    return (f"{len(new_verts) // 4:,} strands, {len(new_faces):,} tris, "
+            f"{length:.2f} units long")
 
 
 # --------------------------------------------------------------------------- #
@@ -1202,15 +1379,16 @@ def _make_shell_image(diffuse_img, name: str, seed: int = 7):
 
 
 def _make_shell_base(context, model, target_tris: int):
-    """A decimated copy of the model to build the shell stack from.
+    """The mesh the fur layers are built from.
 
-    The model has already been through the Surface step (decimated and
-    relaxed), so the copy inherits its smooth skin - the sculpted fur spikes
-    are gone.  That matters: a layer built from the spiky body inherits the
-    spikes, and every layer then pokes out of the next one as a shard.
+    This has to be *as dense as the body* or the layers cannot hug it: a layer
+    coarse enough to be affordable cuts straight through a high poly body and
+    replaces its surface with flat plates.  FluffyWorks gets away with 2.9k
+    triangles because its body is 5.1k - the layers are nearly as dense as the
+    body they sit on.
 
-    Decimating this far is safe: the same body decimated to 3k triangles is
-    still a clean wolf.
+    target_tris of 0 means "same as the body", which is what the fur needs.
+    A lower number is cheaper but only works on a low poly body.
     """
     base = model.copy()
     base.data = model.data.copy()
@@ -1219,10 +1397,9 @@ def _make_shell_base(context, model, target_tris: int):
         if mod.type == "ARMATURE":
             base.modifiers.remove(mod)
     context.collection.objects.link(base)
-    _clean_mesh(base)
 
     current = tri_count(base)
-    target = max(200, min(int(target_tris), current))
+    target = current if int(target_tris) <= 0 else min(int(target_tris), current)
     select_only([base])
     while tri_count(base) > target:
         now = tri_count(base)
@@ -1496,6 +1673,9 @@ def do_export(context, creature: Creature, root: Path, keep_fur=True, keep_extra
     shells = objects_with("shell")
     if shells:
         selection += shells
+    fur = objects_with("fur")
+    if fur:
+        selection += fur
     if keep_fur:
         selection += objects_with("vanilla_fur")
     keep_ids = {o.name for o in selection}
@@ -1549,6 +1729,7 @@ def run_full(context, settings):
     log.append("surface: " + do_smooth_shading(context, settings))
     log.append("rig: " + do_transfer_weights(context))
     log.append("material: " + do_setup_material(context, creature, root))
+    log.append("fur: " + do_make_fur(context, creature, root, settings))
     log.append("shells: " + do_make_shells(context, creature, root, settings))
     log.append("validate: " + do_validate(context))
     log.append("export: " + do_export(
@@ -1671,18 +1852,44 @@ class HPSettings(bpy.types.PropertyGroup):
                     "and does not line up with a new mesh",
     )
     shell_count: bpy.props.IntProperty(
-        name="Fur shells", default=8, min=0, max=16,
+        name="Fur shells", default=0, min=0, max=16,
         description="Number of alpha-blended fur layers (FluffyWorks style). "
                     "0 = no fur",
     )
     shell_spacing: bpy.props.FloatProperty(
-        name="Shell spacing", default=0.3, min=0.01, max=2.0,
+        name="Shell spacing", default=0.35, min=0.01, max=2.0,
         description="Distance between fur layers in Skyrim units (0.3 = 3 mm). "
                     "Total fur length = layers x spacing",
     )
     shell_tris: bpy.props.IntProperty(
-        name="Shell tris", default=3000, min=500, max=20000,
-        description="Triangle budget for the mesh each fur layer is built from",
+        name="Shell tris", default=0, min=0, max=60000,
+        description="Triangle budget for the mesh each fur layer is built from. "
+                    "0 = same as the body, which is what the layers need to hug "
+                    "it - a lower number is cheaper but the layers cut through "
+                    "a high poly body",
+    )
+    fur_count: bpy.props.IntProperty(
+        name="Fur strands", default=8000, min=0, max=40000,
+        description="How many hair cards to scatter over the body. 0 = no "
+                    "fur. Each strand is two triangles",
+    )
+    fur_length: bpy.props.FloatProperty(
+        name="Fur length", default=1.6, min=0.0, max=20.0,
+        description="How long the strands stand off the skin, in Skyrim units "
+                    "(1.6 = 1.6 cm)",
+    )
+    fur_width: bpy.props.FloatProperty(
+        name="Fur width", default=0.7, min=0.0, max=10.0,
+        description="Width of a strand at its root",
+    )
+    fur_lay: bpy.props.FloatProperty(
+        name="Fur lay", default=0.6, min=0.0, max=1.0,
+        description="0 = the strands stand straight out, 1 = they lie back "
+                    "along the body like real fur",
+    )
+    fur_seed: bpy.props.IntProperty(
+        name="Fur seed", default=1, min=0, max=9999,
+        description="Change it for a different scatter",
     )
     smooth_amount: bpy.props.FloatProperty(
         name="Smooth", default=0.2, min=0.0, max=1.0,
@@ -1876,6 +2083,21 @@ class HP_OT_smooth_shading(_Base, bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HP_OT_make_fur(_Base, bpy.types.Operator):
+    bl_idname = "hp.make_fur"
+    bl_label = "Build Fur Cards"
+
+    @property
+    def settings(self):
+        return bpy.context.scene.hp
+
+    @_guard
+    def execute(self, context):
+        root, c = self._creature()
+        self.settings.status = do_make_fur(context, c, root, self.settings)
+        return {"FINISHED"}
+
+
 class HP_OT_make_shells(_Base, bpy.types.Operator):
     bl_idname = "hp.make_shells"
     bl_label = "Build Fur Shells"
@@ -2053,15 +2275,22 @@ class HP_PT_panel(bpy.types.Panel):
         box.operator("hp.setup_material", icon="TEXTURE")
 
         box = layout.box()
-        box.label(text="5. Fur shells", icon="MOD_PARTICLES")
+        box.label(text="5. Fur", icon="MOD_PARTICLES")
+        box.prop(s, "fur_count")
+        box.prop(s, "fur_length")
+        box.prop(s, "fur_width")
+        box.prop(s, "fur_lay")
+        box.operator("hp.make_fur", icon="MOD_PARTICLES")
+        fur = objects_with("fur")
+        if fur:
+            box.label(text=f"{len(fur[0].data.vertices) // 4:,} strands")
+
+        box = layout.box()
+        box.label(text="6. Fur shells", icon="MOD_MESHDEFORM")
         box.prop(s, "shell_count")
         box.prop(s, "shell_spacing")
         box.prop(s, "shell_tris")
-        box.operator("hp.make_shells", icon="MOD_EXPLODE")
-        shells = objects_with("shell")
-        if shells:
-            box.label(text=f"{len(shells)} layers, "
-                           f"fur length {len(shells) * s.shell_spacing:.2f}")
+        box.operator("hp.make_shells", icon="MOD_MESHDEFORM")
 
         box = layout.box()
         box.label(text="6. Export", icon="EXPORT")
@@ -2092,6 +2321,7 @@ CLASSES = (
     HP_OT_decimate,
     HP_OT_transfer_weights,
     HP_OT_smooth_shading,
+    HP_OT_make_fur,
     HP_OT_make_shells,
     HP_OT_setup_material,
     HP_OT_validate,
@@ -2131,3 +2361,6 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+
+
+

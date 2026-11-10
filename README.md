@@ -109,27 +109,34 @@ reference\HighPolyCreatures\bear\pose_side.png
 Feed it to the image generator and ask for the same stance - then the fit
 factors come out near 1 and nothing is distorted.  See `docs/POSE_WORKFLOW.md`.
 
-### Fur shells (FluffyWorks style)
+### Fur
 
-The fur is a stack of alpha-tested copies of the body, the same trick FluffyWorks
-uses:
+Two ways to put fur on a creature:
 
-* every layer is the body pushed out along the vertex normals (`Shell spacing`,
-  0.2 units = 2 mm per layer);
-* every layer gets **its own alpha threshold** (15, 30, 45 …), so the inner
-  layers keep the whole coat and the outer ones only the brightest strands -
-  that taper is what makes it read as fur;
-* the strand mask lives in the alpha channel of `<creature>_hp_shell.dds`, the
-  coat colour in RGB, with no fur on the dark parts (eyes, nose);
-* each layer is **wrapped onto the body** first, so it follows the silhouette
-  instead of poking through it - a shell that does not hug the body ends up
-  buried inside it (invisible) or poking out in shards.
+**Hair cards** (the default) - every strand is a small tapered quad standing
+off the skin, rooted on a vertex of the body and weighted to the same bones, so
+it follows the animation.  This is what makes the fur read as fur: the strands
+are *in the silhouette*, not painted on it.
 
-The threshold is written by the exporter from the material's Skyrim shader node
-group (`Alpha Property` ▸ `Alpha Threshold`) - the material's custom properties
-are ignored, which is why every layer needs its own material. The
-`DOUBLE_SIDED` flag has no Blender equivalent and is patched into the NIF
-after the export.
+| Setting | Effect |
+| --- | --- |
+| `Fur strands` | how many cards (default 8000, two triangles each) |
+| `Fur length` | how far they stand off the skin (1.6 = 1.6 cm) |
+| `Fur width` | the width of a strand at its root |
+| `Fur lay` | 0 = straight out, 1 = lying back along the body |
+
+**Fur shells** (FluffyWorks' technique, off by default) - a stack of
+alpha-tested copies of the body, each pushed further out, with a strand mask in
+the alpha channel of `<creature>_hp_shell.dds`.  It gives a soft coat, but on
+a high poly body it is expensive: a layer has to be as dense as the body to
+hug it, so five layers of a 20k triangle wolf cost 12 MB of NIF.  Hair cards
+give the same read for about a megabyte.
+
+| Setting | Effect |
+| --- | --- |
+| `Fur shells` | number of layers (0 = off) |
+| `Shell spacing` | distance between layers = fur length |
+| `Shell tris` | 0 = same density as the body, which is what the layers need to hug it |
 
 ## Tools installed
 

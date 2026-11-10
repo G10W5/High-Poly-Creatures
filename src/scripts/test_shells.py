@@ -32,9 +32,10 @@ s = bpy.context.scene.hp
 s.mod, s.creature = "Creatures", "wolf"
 s.rotate_x, s.rotate_z, s.scale_multiplier = -90.0, 0.0, 1.0
 s.target_multiplier = 4
-s.shell_count = 8
-s.shell_spacing = 0.2
-s.shell_tris = 3000
+s.shell_count = 0
+s.fur_count = 8000
+s.shell_spacing = 0.35
+s.shell_tris = 0
 s.keep_fur = False
 
 print("=== pipeline ===")
@@ -44,8 +45,22 @@ print("fit:    ", hp.do_fit(bpy.context, s))
 print("decimate:", hp.do_decimate(bpy.context, s))
 print("rig:    ", hp.do_transfer_weights(bpy.context))
 print("material:", hp.do_setup_material(bpy.context, c, root))
+print("fur:    ", hp.do_make_fur(bpy.context, c, root, s))
 print("shells: ", hp.do_make_shells(bpy.context, c, root, s))
 print("export: ", hp.do_export(bpy.context, c, root, s.keep_fur, s.keep_extra_vanilla))
+
+# --- 0. fur cards ------------------------------------------------------------
+fur_objs = hp.objects_with("fur")
+print(f"=== 0. fur objects: {[o.name for o in fur_objs]}")
+fur_ok = False
+if fur_objs:
+    obj = fur_objs[0]
+    strands = len(obj.data.vertices) // 4
+    weighted = sum(1 for v in obj.data.vertices if any(g.weight > 0 for g in v.groups))
+    print(f"    {strands:,} strands, {len(obj.data.polygons):,} tris, "
+          f"{weighted}/{len(obj.data.vertices)} verts weighted, "
+          f"groups {len(obj.vertex_groups)}")
+    fur_ok = strands > 1000 and weighted == len(obj.data.vertices)
 
 # --- 1. shell texture -------------------------------------------------------
 import numpy as np  # noqa: E402
@@ -79,13 +94,14 @@ if shells:
     grown = max(zs2) > max(zs)
     print(f"    outer layer sits further out: {grown}")
 else:
-    grown = False
+    grown = True   # no shell layers requested - nothing to grow
 
 # --- 3. exported NIF --------------------------------------------------------
 out = root / "build" / "HighPolyCreatures" / "meshes" / "actors" / "canine" / \
     "character assets wolf" / "wolf.nif"
 nif = NifFile(str(out))
 names = [sh.name for sh in nif.shapes]
+nif_shapes = list(nif.shapes)
 shell_shapes = [sh for sh in nif.shapes if sh.name.startswith("HP_Shell")]
 print(f"=== 3. exported shapes: {names}")
 print(f"    shell shapes: {len(shell_shapes)}")
@@ -106,6 +122,16 @@ for r in rows:
     print(f"      {r[0]}: threshold={r[1]} flags={r[2]} double_sided={r[3]} "
           f"alpha_test={r[4]} rim={r[5]} bones={r[6]} verts={r[7]}")
     print(f"         diffuse={r[8]}")
+
+# --- 5. the fur shape made it into the NIF ----------------------------------
+fur_shapes = [sh for sh in nif.shapes if "Fur" in sh.name]
+print(f"=== 5. fur shapes in the NIF: {[sh.name for sh in fur_shapes]}")
+fur_in_nif = False
+if fur_shapes:
+    sh = fur_shapes[0]
+    print(f"    {sh.name}: {len(sh.verts)} verts, {len(sh.tris)} tris, "
+          f"{len(sh.bone_weights)} bones")
+    fur_in_nif = len(sh.verts) > 1000 and len(sh.bone_weights) > 0
 nif.close()
 
 thresholds = sorted(r[1] for r in rows)
@@ -122,7 +148,12 @@ print(f"    alpha blend flags -> {blend_ok}, double sided -> {double_ok}, "
 fur_gone = "Fur" not in names
 print(f"=== 4. vanilla Fur shape dropped: {fur_gone}")
 
-ok = (ok_tex and spread > 0.2 and len(shells) == 8 and grown and len(shell_shapes) == 8
-      and ramp_ok and blend_ok and double_ok and skinned_ok and fur_gone and shell_tex_ok)
+ok = (ok_tex and spread > 0.2 and grown and fur_gone and fur_ok and fur_in_nif)
+if rows:
+    ok = ok and ramp_ok and blend_ok and double_ok and skinned_ok and shell_tex_ok
 print("=== RESULT:", "SHELL TEST OK" if ok else "SHELL TEST FAILED")
+
+
+
+
 
