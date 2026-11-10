@@ -41,8 +41,8 @@ def main() -> int:
     only = [a.lower() for a in sys.argv[sys.argv.index("--") + 1:]] if "--" in sys.argv else []
     settings = bpy.context.scene.hp
     settings.target_multiplier = 2.5
-    settings.shell_tris = 0
-    settings.shell_spacing = 0.4
+    settings.shell_tris = 6000
+    settings.shell_spacing = 0.2
     settings.shell_gap = 0.3
     settings.fur_count = 0
 
@@ -60,8 +60,8 @@ def main() -> int:
         settings = bpy.context.scene.hp
         settings.mod, settings.creature = c.mod, c.name
         settings.target_multiplier = 2.5
-        settings.shell_tris = 0
-        settings.shell_spacing = 0.4
+        settings.shell_tris = 6000
+        settings.shell_spacing = 0.2
         settings.shell_gap = 0.3
         settings.fur_count = 0
         settings.auto_orient = True
@@ -98,4 +98,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
 

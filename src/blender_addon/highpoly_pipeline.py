@@ -1,4 +1,4 @@
-﻿bl_info = {
+bl_info = {
     "name": "High Poly Creature Pipeline",
     "author": "High Poly Creature Overhaul",
     "version": (1, 0, 0),
@@ -1267,7 +1267,7 @@ def do_setup_material(context, creature: Creature, root: Path) -> str:
 # taper is what makes it read as fur instead of a stack of skins.
 SHELL_PREFIX = "HP_Shell"
 SHELL_ALPHA_FLAGS = 4844        # PyNifly's default: alpha blend + alpha test
-SHELL_THRESHOLD_TOP = 120      # the outermost layer cuts at this alpha
+SHELL_THRESHOLD_TOP = 240      # the outermost layer cuts at this alpha (FluffyWorks uses 15..240)
 
 
 def _box_blur(array, radius: int):
@@ -1880,12 +1880,12 @@ class HPSettings(bpy.types.PropertyGroup):
                     "and does not line up with a new mesh",
     )
     shell_count: bpy.props.IntProperty(
-        name="Fur shells", default=5, min=0, max=16,
+        name="Fur shells", default=16, min=0, max=16,
         description="Number of alpha-blended fur layers (FluffyWorks style). "
                     "0 = no fur",
     )
     shell_spacing: bpy.props.FloatProperty(
-        name="Shell spacing", default=0.4, min=0.01, max=2.0,
+        name="Shell spacing", default=0.2, min=0.01, max=2.0,
         description="Distance between fur layers in Skyrim units (0.3 = 3 mm). "
                     "Total fur length = layers x spacing",
     )
@@ -1896,7 +1896,7 @@ class HPSettings(bpy.types.PropertyGroup):
                     "those facets inside the fur where they cannot be seen",
     )
     shell_tris: bpy.props.IntProperty(
-        name="Shell tris", default=0, min=0, max=60000,
+        name="Shell tris", default=6000, min=0, max=60000,
         description="Triangle budget for the mesh each fur layer is built from. "
                     "0 = same as the body, which is what the layers need to hug "
                     "it - a lower number is cheaper but the layers cut through "
