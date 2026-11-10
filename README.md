@@ -62,10 +62,31 @@ the steps, or hit **Run Full Pipeline**:
 | 2. Import Model | drops the GLB/FBX/OBJ from `incoming/`, then **Auto Fit** (rotate, scale to vanilla bbox, optional per-axis silhouette match) and **Decimate** (multi-pass collapse to N tris) |
 | 3. Transfer Weights | creates the vanilla bone groups, data-transfers weights, drops dead groups, limits to 4 influences |
 | 4. Material | reuses the vanilla Skyrim shader nodes, points them at the AI diffuse and a generated normal+gloss map, writes 2K PNGs |
-| 5. Export | hides the geometry being replaced, exports NIF + textures to `build/<Mod>/` at the vanilla path, saves a work `.blend` |
+| 5. Fur shells | builds the FluffyWorks-style fur stack (see below) |
+| 6. Export | hides the geometry being replaced, exports NIF + textures to `build/<Mod>/` at the vanilla path, saves a work `.blend` |
 
-Settings: target tri budget (x vanilla), rotation, fit mode, texture size (1K/2K/4K), keep the
-vanilla fur shell, keep other vanilla meshes.
+Settings: target tri budget (x vanilla), rotation, fit mode, texture size (1K/2K/4K),
+fur shells (count / spacing / mesh detail), keep the vanilla fur shell, keep other
+vanilla meshes.
+
+### Fur shells (FluffyWorks style)
+
+The fur is a stack of alpha-tested copies of the body, the same trick FluffyWorks
+uses:
+
+* every layer is the body pushed out along the vertex normals (`Shell spacing`,
+  0.2 units = 2 mm per layer);
+* every layer gets **its own alpha threshold** (15, 30, 45 …), so the inner
+  layers keep the whole coat and the outer ones only the brightest strands -
+  that taper is what makes it read as fur;
+* the strand mask lives in the alpha channel of `<creature>_hp_shell.dds`, the
+  coat colour in RGB, with no fur on the dark parts (eyes, nose).
+
+The threshold is written by the exporter from the material's Skyrim shader node
+group (`Alpha Property` ▸ `Alpha Threshold`) - the material's custom properties
+are ignored, which is why every layer needs its own material. The
+`DOUBLE_SIDED` flag has no Blender equivalent and is patched into the NIF
+after the export.
 
 ## Tools installed
 
@@ -111,6 +132,7 @@ dist/                  release archives (generated)
 - [x] Blender N-panel add-on (`highpoly_pipeline.py`), tested headless on the wolf
 - [x] Wolf pilot: GLB -> fit -> decimate -> weights -> material -> NIF -> DDS
 - [x] Texture build (PNG -> BC7 DDS, full mips) and FOMOD packaging
+- [x] FluffyWorks-style fur shells (alpha-tested layer stack, per-layer threshold)
 - [ ] In-game test of the wolf (install `build/HighPolyCreatures` into Data, spawn a wolf)
 - [ ] Second colour variant / `wolf1..4` handling
 - [ ] Remaining 70 creatures

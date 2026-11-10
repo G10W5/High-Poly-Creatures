@@ -53,8 +53,13 @@ def convert(png: Path, out: Path, fmt: str, force: bool = False) -> str:
     if not TEXCONV.is_file():
         raise SystemExit(f"texconv not found: {TEXCONV}")
     out.parent.mkdir(parents=True, exist_ok=True)
+    # texconv converts an sRGB source to linear and back again for an sRGB
+    # target, so the stored bytes match the PNG.  "-l --ignore-srgb" is only
+    # right for *linear* targets (normal maps), where it keeps the raw values;
+    # using it on a colour map made the diffuse washed out in game.
+    flags = [] if fmt.endswith("_SRGB") else ["-l", "--ignore-srgb"]
     cmd = [
-        str(TEXCONV), "-nologo", "-y", "-l", "--ignore-srgb",
+        str(TEXCONV), "-nologo", "-y", *flags,
         "-f", fmt, "-o", str(out.parent), str(png),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True)

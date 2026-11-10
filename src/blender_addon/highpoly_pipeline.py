@@ -674,7 +674,253 @@ def do_setup_material(context, creature: Creature, root: Path) -> str:
         img.save()
         img.filepath_raw = str(png)
         saved.append(png.name)
+
+    # The shell texture: same coat colour, strand mask in the alpha channel.
+    # It is only needed when shells are on, but writing it always keeps the
+    # texture folder in sync with the panel settings.
+    try:
+        shells = int(context.scene.hp.shell_count)
+    except Exception:
+        shells = 0
+    if shells > 0:
+        shell_img = _make_shell_image(diffuse, creature.name)
+        png = tex_dir / f"{creature.name}_hp_shell.png"
+        shell_img.filepath_raw = str(png)
+        shell_img.file_format = "PNG"
+        shell_img.save()
+        shell_img.filepath_raw = str(png)
+        saved.append(png.name)
+
     return f"material {mat.name}, textures: {', '.join(saved)}"
+
+
+# --------------------------------------------------------------------------- #
+# fur shells (FluffyWorks style)
+# --------------------------------------------------------------------------- #
+
+# FluffyWorks builds its fur as a stack of alpha-blended copies of the body,
+# each pushed further out along the vertex normals.  Every layer gets a higher
+# alpha threshold, so the outer layers only keep the brightest strands - that
+# taper is what makes it read as fur instead of a stack of skins.
+SHELL_PREFIX = "HP_Shell"
+SHELL_ALPHA_FLAGS = 4844        # PyNifly's default: alpha blend + alpha test
+SHELL_THRESHOLD_STEP = 15       # FluffyWorks uses 15, 30, 45 ... 240
+
+
+def _value_noise(height: int, width: int, cells_y: int, cells_x: int, rng):
+    """Bilinear value noise, stretched along V so it reads as strands."""
+    import numpy as np
+
+    grid = rng.random((cells_y + 1, cells_x + 1)).astype(np.float32)
+    ys = np.linspace(0, cells_y, height, endpoint=False)
+    xs = np.linspace(0, cells_x, width, endpoint=False)
+    y0 = ys.astype(np.int32)
+    x0 = xs.astype(np.int32)
+    fy = (ys - y0)[:, None]
+    fx = (xs - x0)[None, :]
+    g00 = grid[np.ix_(y0, x0)]
+    g01 = grid[np.ix_(y0, x0 + 1)]
+    g10 = grid[np.ix_(y0 + 1, x0)]
+    g11 = grid[np.ix_(y0 + 1, x0 + 1)]
+    top = g00 * (1 - fx) + g01 * fx
+    bottom = g10 * (1 - fx) + g11 * fx
+    return top * (1 - fy) + bottom * fy
+
+
+def _strand_mask(height: int, width: int, seed: int = 7):
+    """Fur strand mask with a broad value spread.
+
+    The spread matters: the shells fade because each layer has a higher alpha
+    threshold, so the mask has to cover the whole range - dense inner layers
+    keep nearly everything, the outer ones only the brightest strands.
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    mask = np.zeros((height, width), dtype=np.float32)
+    amplitude = 1.0
+    total = 0.0
+    cells = 48
+    for _ in range(4):
+        # fine across U, coarse along V -> long thin strands
+        mask += _value_noise(height, width, max(2, cells // 8), cells, rng) * amplitude
+        total += amplitude
+        amplitude *= 0.5
+        cells *= 2
+    mask /= total
+    return np.clip((mask - 0.5) * 1.7 + 0.55, 0.0, 1.0)
+
+
+def _make_shell_image(diffuse_img, name: str, seed: int = 7):
+    """Build the shell texture: fur colour in RGB, strand mask in alpha.
+
+    The RGB is a copy of the diffuse so the fur keeps the coat colour.  The
+    alpha is scaled by a blurred version of the diffuse, so dark features (eyes,
+    nose, mouth) end up with almost no fur on them.
+    """
+    import numpy as np
+
+    width, height = diffuse_img.size
+    pixels = np.array(diffuse_img.pixels[:], dtype=np.float32).reshape(height, width, 4)
+    rgb = pixels[:, :, :3].copy()
+    luma = rgb[:, :, 0] * 0.3 + rgb[:, :, 1] * 0.6 + rgb[:, :, 2] * 0.1
+
+    # blur the luma so isolated dark specks do not punch holes in the fur
+    blurred = bpy.data.images.new("hp_luma_tmp", width, height)
+    buf = np.zeros((height, width, 4), dtype=np.float32)
+    buf[:, :, 0] = buf[:, :, 1] = buf[:, :, 2] = luma
+    buf[:, :, 3] = 1.0
+    blurred.pixels = buf.ravel().tolist()
+    blurred.scale(max(8, width // 16), max(8, height // 16))
+    blurred.scale(width, height)
+    soft = np.array(blurred.pixels[:], dtype=np.float32).reshape(height, width, 4)[:, :, 0]
+    bpy.data.images.remove(blurred)
+
+    coverage = np.clip((soft - 0.12) / 0.28, 0.0, 1.0)
+    mask = _strand_mask(height, width, seed=seed)
+    alpha = np.clip(mask * 0.8 + 0.2, 0.0, 1.0) * coverage
+
+    out = np.zeros((height, width, 4), dtype=np.float32)
+    out[:, :, :3] = rgb
+    out[:, :, 3] = alpha
+    img = bpy.data.images.new(f"{name}_shell", width, height, alpha=True)
+    img.pixels = out.ravel().tolist()
+    return img
+
+
+def _make_shell_base(context, model, target_tris: int):
+    """A decimated, smoothed copy of the model to build the shell stack from."""
+    base = model.copy()
+    base.data = model.data.copy()
+    base.name = "HP_ShellBase"
+    for mod in list(base.modifiers):
+        if mod.type == "ARMATURE":
+            base.modifiers.remove(mod)
+    context.collection.objects.link(base)
+
+    current = tri_count(base)
+    target = max(200, min(int(target_tris), current))
+    select_only([base])
+    while tri_count(base) > target:
+        now = tri_count(base)
+        ratio = target / now
+        ratio = 0.5 if ratio < 0.3 else ratio
+        mod = base.modifiers.new("HP_ShellDecimate", "DECIMATE")
+        mod.decimate_type = "COLLAPSE"
+        mod.ratio = ratio
+        mod.use_collapse_triangulate = True
+        select_only([base])
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+        if tri_count(base) >= now:
+            break
+
+    # smooth away the spikes a collapse leaves behind, otherwise the shells
+    # poke through the body in places
+    smooth = base.modifiers.new("HP_ShellSmooth", "SMOOTH")
+    smooth.factor = 0.5
+    smooth.iterations = 3
+    select_only([base])
+    bpy.ops.object.modifier_apply(modifier=smooth.name)
+    return base
+
+
+def _set_alpha_threshold(mat, threshold: int) -> bool:
+    """Set the alpha test cutoff in the Skyrim shader node group.
+
+    PyNifly's exporter writes the NiAlphaProperty from the material's shader
+    node group - the node linked to the group's "Alpha Property" input - and
+    not from the material's custom properties.  Every material copied from the
+    vanilla body inherits its threshold (62), which would give all the shells
+    the same cutoff and no taper.
+    """
+    tree = getattr(mat, "node_tree", None)
+    if tree is None:
+        return False
+    for node in tree.nodes:
+        for inp in node.inputs:
+            if inp.name != "Alpha Property" or not inp.is_linked:
+                continue
+            source = inp.links[0].from_node
+            for socket in source.inputs:
+                if socket.name == "Alpha Threshold":
+                    socket.default_value = float(threshold)
+                elif socket.name == "Alpha Test":
+                    socket.default_value = True
+            return True
+    return False
+
+
+def _shell_material(model, shell_png: Path, layer: int):
+    """One material per shell layer.
+
+    Each layer gets its own alpha threshold (15, 30, 45 ...): the outer
+    layers must only keep the brightest strands of the strand mask, and that
+    taper is what makes the stack read as fur instead of a stack of skins.
+    """
+    src = next((m for m in model.data.materials if m), None)
+    if src is None:
+        raise RuntimeError("the model has no material - run Setup Material first")
+    mat = src.copy()
+    mat.name = f"{SHELL_PREFIX}_L{layer:02d}"
+    threshold = SHELL_THRESHOLD_STEP * layer
+    _set_alpha_threshold(mat, threshold)
+    mat["NiAlphaProperty_flags"] = SHELL_ALPHA_FLAGS
+    mat["NiAlphaProperty_threshold"] = threshold
+    img = bpy.data.images.load(str(shell_png))
+    img.name = shell_png.stem
+    nodes = mat.node_tree.nodes
+    if "Diffuse_Texture" in nodes:
+        nodes["Diffuse_Texture"].image = img
+    return mat
+
+
+def do_make_shells(context, creature: Creature, root: Path, settings) -> str:
+    """Build the FluffyWorks-style shell stack (see the section comment above)."""
+    model = objects_with("model")
+    if not model:
+        raise RuntimeError("no model loaded")
+    model = model[0]
+
+    count = int(settings.shell_count)
+    delete_role("shell")
+    if count <= 0:
+        return "shells: off"
+
+    tex_dir = incoming_dir(root, creature) / "textures" / "actors" / creature.name
+    # "_hp_shell" and not "_shell": FluffyWorks already ships <creature>_shell.dds
+    # for its own fur, and the two must not fight over the same file name.
+    shell_png = tex_dir / f"{creature.name}_hp_shell.png"
+    if not shell_png.is_file():
+        raise RuntimeError(
+            f"shell texture {shell_png.name} is missing - run Setup Material first")
+
+    base = _make_shell_base(context, model, int(settings.shell_tris))
+    spacing = float(settings.shell_spacing)
+
+    made = []
+    for layer in range(1, count + 1):
+        mat = _shell_material(model, shell_png, layer)
+        shell = base.copy()
+        shell.data = base.data.copy()
+        # no dots in the name: Blender treats ".001" as its own duplicate suffix
+        shell.name = f"{SHELL_PREFIX}_L{layer:02d}"
+        shell.data.materials.clear()
+        shell.data.materials.append(mat)
+        mesh = shell.data
+        for v in mesh.vertices:
+            v.co += v.normal * (layer * spacing)
+        mesh.update()
+        context.collection.objects.link(shell)
+        tag([shell], "shell")
+        shell["hp_shell_layer"] = layer
+        made.append(shell)
+    bpy.data.objects.remove(base, do_unlink=True)
+
+    tris = tri_count(made[0]) if made else 0
+    return (
+        f"{len(made)} shells x {tris:,} tris, spacing {spacing:.2f} "
+        f"(fur length {count * spacing:.2f} units)"
+    )
 
 
 def do_validate(context) -> str:
@@ -729,6 +975,41 @@ def do_validate(context) -> str:
     )
 
 
+def postprocess_nif(path: Path) -> str:
+    """Give the shell layers FluffyWorks' shader setup.
+
+    The alpha blend and the per-layer threshold are written by the exporter
+    (they come from the material), but the DOUBLE_SIDED flag has no Blender
+    equivalent, so it is patched into the exported NIF.  Rim and soft lighting
+    are dropped as well: the vanilla _sk.dds lighting map belongs to the old
+    body and only muddies up the thin fur layers.
+    """
+    try:
+        from pyn.pynifly import NifFile
+        from pyn.nifconstants import ShaderFlags2
+    except Exception as exc:
+        return f"shell patch skipped: {exc}"
+
+    try:
+        nif = NifFile(str(path))
+        patched = []
+        for shape in nif.shapes:
+            if not shape.name.startswith(SHELL_PREFIX):
+                continue
+            shader = shape.shader
+            props = shader.properties
+            props.shaderflags2_set(ShaderFlags2.DOUBLE_SIDED)
+            props.shaderflags2_clear(ShaderFlags2.RIM_LIGHTING)
+            props.shaderflags2_clear(ShaderFlags2.SOFT_LIGHTING)
+            shader.properties = props
+            patched.append(shape.name)
+        nif.save()
+        nif.close()
+    except Exception as exc:
+        return f"shell patch failed: {exc}"
+    return f"{len(patched)} shells patched"
+
+
 def do_export(context, creature: Creature, root: Path, keep_fur=True, keep_extra=False) -> str:
     model = objects_with("model")
     arms = objects_with("vanilla_armature")
@@ -745,6 +1026,9 @@ def do_export(context, creature: Creature, root: Path, keep_fur=True, keep_extra
     out.parent.mkdir(parents=True, exist_ok=True)
 
     selection = [model, arm]
+    shells = objects_with("shell")
+    if shells:
+        selection += shells
     if keep_fur:
         selection += objects_with("vanilla_fur")
     keep_ids = {o.name for o in selection}
@@ -775,10 +1059,14 @@ def do_export(context, creature: Creature, root: Path, keep_fur=True, keep_extra
             o.hide_set(False)
             o.hide_render = False
 
+    patched = ""
+    if shells:
+        patched = " | " + postprocess_nif(out)
+
     work = incoming_dir(root, creature).parent / "work"
     work.mkdir(parents=True, exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=str(work / f"{creature.name}.blend"))
-    return str(out.relative_to(root))
+    return str(out.relative_to(root)) + patched
 
 
 def run_full(context, settings):
@@ -793,6 +1081,7 @@ def run_full(context, settings):
     log.append("decimate: " + do_decimate(context, settings))
     log.append("rig: " + do_transfer_weights(context))
     log.append("material: " + do_setup_material(context, creature, root))
+    log.append("shells: " + do_make_shells(context, creature, root, settings))
     log.append("validate: " + do_validate(context))
     log.append("export: " + do_export(
         context, creature, root, settings.keep_fur, settings.keep_extra_vanilla))
@@ -896,8 +1185,24 @@ class HPSettings(bpy.types.PropertyGroup):
     )
     keep_fur: bpy.props.BoolProperty(
         name="Keep vanilla fur shell",
-        default=True,
-        description="Export the vanilla Fur shell shape alongside the new body",
+        default=False,
+        description="Export the vanilla Fur shell shape alongside the new body. "
+                    "Off by default: that shell was modelled for the vanilla body "
+                    "and does not line up with a new mesh",
+    )
+    shell_count: bpy.props.IntProperty(
+        name="Fur shells", default=8, min=0, max=16,
+        description="Number of alpha-blended fur layers (FluffyWorks style). "
+                    "0 = no fur",
+    )
+    shell_spacing: bpy.props.FloatProperty(
+        name="Shell spacing", default=0.2, min=0.01, max=2.0,
+        description="Distance between fur layers in Skyrim units (0.2 = 2 mm). "
+                    "Total fur length = layers x spacing",
+    )
+    shell_tris: bpy.props.IntProperty(
+        name="Shell tris", default=3000, min=500, max=20000,
+        description="Triangle budget for the mesh each fur layer is built from",
     )
     texture_size: bpy.props.EnumProperty(
         name="Texture size",
@@ -1058,6 +1363,21 @@ class HP_OT_transfer_weights(_Base, bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HP_OT_make_shells(_Base, bpy.types.Operator):
+    bl_idname = "hp.make_shells"
+    bl_label = "Build Fur Shells"
+
+    @property
+    def settings(self):
+        return bpy.context.scene.hp
+
+    @_guard
+    def execute(self, context):
+        root, c = self._creature()
+        self.settings.status = do_make_shells(context, c, root, self.settings)
+        return {"FINISHED"}
+
+
 class HP_OT_setup_material(_Base, bpy.types.Operator):
     bl_idname = "hp.setup_material"
     bl_label = "Setup Skyrim Material"
@@ -1210,7 +1530,18 @@ class HP_PT_panel(bpy.types.Panel):
         box.operator("hp.setup_material", icon="TEXTURE")
 
         box = layout.box()
-        box.label(text="5. Export", icon="EXPORT")
+        box.label(text="5. Fur shells", icon="MOD_PARTICLES")
+        box.prop(s, "shell_count")
+        box.prop(s, "shell_spacing")
+        box.prop(s, "shell_tris")
+        box.operator("hp.make_shells", icon="MOD_EXPLODE")
+        shells = objects_with("shell")
+        if shells:
+            box.label(text=f"{len(shells)} layers, "
+                           f"fur length {len(shells) * s.shell_spacing:.2f}")
+
+        box = layout.box()
+        box.label(text="6. Export", icon="EXPORT")
         box.prop(s, "keep_fur")
         box.prop(s, "keep_extra_vanilla")
         row = box.row(align=True)
@@ -1237,6 +1568,7 @@ CLASSES = (
     HP_OT_fit,
     HP_OT_decimate,
     HP_OT_transfer_weights,
+    HP_OT_make_shells,
     HP_OT_setup_material,
     HP_OT_validate,
     HP_OT_export,

@@ -143,13 +143,17 @@ def expand_variants(mod: str, creatures: list[Creature]) -> int:
             if not matches(bare, c.prefixes):
                 continue
             out = ROOT / "build" / MOD_FOLDERS[mod] / ref.relative_to(ref_dir)
-            if out.exists() or out == main:
+            if out == main:
+                continue
+            # refresh a variant that is older than the body it copies
+            if out.exists() and out.stat().st_mtime >= main.stat().st_mtime:
                 continue
             variants.append((ref, out))
         for ref, out in variants:
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(main.read_bytes())
-            c.files.append(out)
+            if out not in c.files:
+                c.files.append(out)
             added += 1
     return added
 
