@@ -1,4 +1,4 @@
-"""Auto Fit must be repeatable, reversible, and live.
+﻿"""Auto Fit must be repeatable, reversible, and live.
 
 Historically every press baked a new transform onto the vertices, so changing
 Rotate X after a fit could never do anything - the -90 was already in the mesh.
@@ -33,7 +33,7 @@ s = bpy.context.scene.hp
 s.mod, s.creature = "Creatures", "wolf"
 s.rotate_x, s.rotate_z, s.scale_multiplier = -90.0, 0.0, 1.0
 s.fit_mode = "AXIS"
-s.target_multiplier = 6
+s.target_multiplier = 4
 s.auto_orient = True
 
 hp.do_load_vanilla(bpy.context, c, root)
@@ -111,3 +111,4 @@ print(f"=== 8. after re-fit: tris {tris_before} -> {tris_after}, "
 ok = (drift < 1e-4 and auto_ok and live > 1e-4 and away > 1e-4 and drift2 < 1e-4
       and tris_after == tris_before and weighted_after == weighted_before)
 print("=== RESULT:", "FIT TEST OK" if ok else "FIT TEST FAILED")
+

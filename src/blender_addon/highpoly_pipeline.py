@@ -710,6 +710,52 @@ def _model_edges(mesh) -> list[tuple[int, int]]:
     return edges
 
 
+def _remesh_and_reuv(obj, voxel_size: float, source) -> None:
+    """Rebuild the mesh as a clean voxel surface and give it the source's UVs.
+
+    The AI sculpts come with their fur modelled as thousands of thin shards.
+    That is fine for a render, but it shreds under decimation and it makes
+    every fur layer built on top of it stick out as a plate.  A voxel remesh
+    turns it back into a clean surface; the UVs are then copied over from the
+    original by nearest point, so the texture still lines up.
+    """
+    from mathutils import kdtree
+
+    src = source.data
+    layer = src.uv_layers[0] if src.uv_layers else None
+    uv_sum: dict[int, list] = {}
+    if layer:
+        for loop in src.loops:
+            vid = loop.vertex_index
+            u, v = layer.data[loop.index].uv
+            prev = uv_sum.get(vid, [0.0, 0.0, 0])
+            prev[0] += u
+            prev[1] += v
+            prev[2] += 1
+            uv_sum[vid] = prev
+    src_uv = {k: (v[0] / v[2], v[1] / v[2]) for k, v in uv_sum.items()}
+
+    kd = kdtree.KDTree(len(src.vertices))
+    for i, v in enumerate(src.vertices):
+        kd.insert(v.co, i)
+    kd.balance()
+
+    remesh = obj.modifiers.new("HP_Remesh", "REMESH")
+    remesh.mode = "VOXEL"
+    remesh.voxel_size = voxel_size
+    remesh.adaptivity = 0.0
+    select_only([obj])
+    bpy.ops.object.modifier_apply(modifier=remesh.name)
+
+    target = obj.data.uv_layers[0] if obj.data.uv_layers else obj.data.uv_layers.new(name="UVMap")
+    for loop in obj.data.loops:
+        co = obj.data.vertices[loop.vertex_index].co
+        _, idx, _dist = kd.find(co)
+        u, v = src_uv.get(idx, (0.0, 0.0))
+        target.data[loop.index].uv = (u, v)
+    obj.data.update()
+
+
 def do_smooth_shading(context, settings) -> str:
     """Round off the decimation and shade the mesh smooth - without any polys.
 
@@ -731,10 +777,28 @@ def do_smooth_shading(context, settings) -> str:
     amount = float(settings.smooth_amount)
     if amount > 0.0:
         mod = model.modifiers.new("HP_Smooth", "SMOOTH")
-        mod.factor = amount
-        mod.iterations = 2
+        # the Smooth modifier overshoots above a factor of 0.5, so the
+        # strength is capped and the relaxation is done in many small passes
+        mod.factor = min(amount, 0.5)
+        # the sculpted fur is a mess of thin shards, and one pass over them is
+        # not enough to take the edges off
+        mod.iterations = max(1, int(amount * 14))
         select_only([model])
         bpy.ops.object.modifier_apply(modifier=mod.name)
+        _clean_mesh(model)
+
+    voxel = float(settings.remesh_voxel)
+    remeshed = False
+    if voxel > 0.0:
+        # a clean surface for the fur layers to sit on
+        source = model.copy()
+        source.data = model.data.copy()
+        bpy.context.scene.collection.objects.link(source)
+        try:
+            _remesh_and_reuv(model, voxel, source)
+            remeshed = True
+        finally:
+            bpy.data.objects.remove(source, do_unlink=True)
 
     if settings.shade_smooth:
         select_only([model])
@@ -745,7 +809,8 @@ def do_smooth_shading(context, settings) -> str:
                 poly.use_smooth = True
         model.data.update()
 
-    return (f"smoothed (amount {amount:.2f}), "
+    return (f"smoothed (amount {amount:.2f})"
+            f"{', remeshed at ' + format(voxel, '.2f') if remeshed else ''}, "
             f"shade smooth {'on' if settings.shade_smooth else 'off'}")
 
 
@@ -1139,8 +1204,13 @@ def _make_shell_image(diffuse_img, name: str, seed: int = 7):
 def _make_shell_base(context, model, target_tris: int):
     """A decimated copy of the model to build the shell stack from.
 
-    Deliberately *not* smoothed: the shells are wrapped onto the body after
-    this, and a smoothed copy would sink into the body instead of hugging it.
+    The model has already been through the Surface step (decimated and
+    relaxed), so the copy inherits its smooth skin - the sculpted fur spikes
+    are gone.  That matters: a layer built from the spiky body inherits the
+    spikes, and every layer then pokes out of the next one as a shard.
+
+    Decimating this far is safe: the same body decimated to 3k triangles is
+    still a clean wolf.
     """
     base = model.copy()
     base.data = model.data.copy()
@@ -1149,6 +1219,7 @@ def _make_shell_base(context, model, target_tris: int):
         if mod.type == "ARMATURE":
             base.modifiers.remove(mod)
     context.collection.objects.link(base)
+    _clean_mesh(base)
 
     current = tri_count(base)
     target = max(200, min(int(target_tris), current))
@@ -1165,7 +1236,53 @@ def _make_shell_base(context, model, target_tris: int):
         bpy.ops.object.modifier_apply(modifier=mod.name)
         if tri_count(base) >= now:
             break
+
     return base
+
+
+def _clean_mesh(obj, merge: float = 0.01) -> int:
+    """Merge coincident vertices and drop degenerate faces.
+
+    Relaxing the sculpted fur collapses its thin spikes into zero-area faces,
+    and decimating a mesh full of those produces garbage - the shell layers
+    came out as a cloud of loose triangles.  Cleaning first makes the
+    collapse behave.
+    """
+    import bmesh
+
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    before = len(bm.faces)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=merge)
+    bmesh.ops.dissolve_degenerate(bm, dist=merge * 5.0, edges=bm.edges)
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+    return before - len(obj.data.polygons)
+
+
+def _cut_long_triangles(obj, factor: float = 2.5) -> int:
+    """Remove the faces whose edges are much longer than the mesh's average."""
+    import bmesh
+
+    mesh = obj.data
+    if not mesh.polygons:
+        return 0
+    lengths = [
+        (mesh.vertices[e.vertices[0]].co - mesh.vertices[e.vertices[1]].co).length
+        for e in mesh.edges
+    ]
+    average = sum(lengths) / len(lengths)
+    limit = average * factor
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    doomed = [f for f in bm.faces if max(e.calc_length() for e in f.edges) > limit]
+    for f in doomed:
+        bm.faces.remove(f)
+    bm.to_mesh(mesh)
+    bm.free()
+    mesh.update()
+    return len(doomed)
 
 
 def _set_alpha_threshold(mat, threshold: int) -> bool:
@@ -1242,8 +1359,6 @@ def do_make_shells(context, creature: Creature, root: Path, settings) -> str:
     spacing = float(settings.shell_spacing)
 
     made = []
-    body = objects_with("vanilla_body")
-    body = body[0] if body else None
     for layer in range(1, count + 1):
         mat = _shell_material(model, shell_png, layer)
         shell = base.copy()
@@ -1255,21 +1370,13 @@ def do_make_shells(context, creature: Creature, root: Path, settings) -> str:
         # link first: applying a modifier needs the object in the view layer
         context.collection.objects.link(shell)
 
-        # Wrap the shell onto the body so it follows the silhouette instead of
-        # poking through it in shards, then push it out along the surface
-        # normal by the layer's distance.  That is what makes a fur layer.
-        if body is not None:
-            wrap = shell.modifiers.new("HP_ShellWrap", "SHRINKWRAP")
-            wrap.target = body
-            wrap.wrap_method = "NEAREST_SURFACEPOINT"
-            wrap.offset = layer * spacing
-            select_only([shell])
-            bpy.ops.object.modifier_apply(modifier=wrap.name)
-        else:
-            mesh = shell.data
-            for v in mesh.vertices:
-                v.co += v.normal * (layer * spacing)
-            mesh.update()
+        # Push the layer out along the skin's normal.  The skin is the body
+        # with the sculpted fur spikes relaxed away, so the layers grow out of
+        # the skin instead of turning the spikes into plates.
+        mesh = shell.data
+        for v in mesh.vertices:
+            v.co += v.normal * (layer * spacing)
+        mesh.update()
 
         tag([shell], "shell")
         shell["hp_shell_layer"] = layer
@@ -1511,8 +1618,10 @@ class HPSettings(bpy.types.PropertyGroup):
     creature: bpy.props.EnumProperty(name="Creature", items=creature_items)
     model_file: bpy.props.StringProperty(name="Model", subtype="FILE_PATH")
     target_multiplier: bpy.props.IntProperty(
-        name="Target x Vanilla", default=6, min=1, max=64,
-        description="Tri budget as a multiple of vanilla",
+        name="Target x Vanilla", default=4, min=1, max=64,
+        description="Tri budget as a multiple of vanilla. The AI sculpts "
+                    "model their fur as thousands of thin shards, and a high "
+                    "budget keeps them - they show up as plates",
     )
     target_tris: bpy.props.IntProperty(
         name="Target Tris", default=0, min=0,
@@ -1576,15 +1685,23 @@ class HPSettings(bpy.types.PropertyGroup):
         description="Triangle budget for the mesh each fur layer is built from",
     )
     smooth_amount: bpy.props.FloatProperty(
-        name="Smooth", default=0.3, min=0.0, max=1.0,
-        description="How hard the decimated mesh is relaxed. 0 = keep the "
-                    "decimated shape, 1 = very soft. Costs no triangles",
+        name="Smooth", default=0.2, min=0.0, max=1.0,
+        description="How hard the decimated mesh is relaxed. The sculpted fur "
+                    "is a mess of thin shards, and relaxing it too hard makes "
+                    "them collapse into holes. Costs no triangles",
     )
     shade_smooth: bpy.props.BoolProperty(
         name="Shade smooth", default=True,
         description="Average the normals across the faces so the surface "
                     "shades smoothly. Costs no triangles - the detail comes "
                     "from the normal map",
+    )
+    remesh_voxel: bpy.props.FloatProperty(
+        name="Remesh", default=0.0, min=0.0, max=10.0,
+        description="Rebuild the mesh as a clean voxel surface of this size "
+                    "(0 = off). It cleans the geometry up completely, but the "
+                    "UVs have to be copied over by nearest point, which "
+                    "smears the texture - so it is off by default",
     )
     texture_size: bpy.props.EnumProperty(
         name="Texture size",
@@ -1925,6 +2042,7 @@ class HP_PT_panel(bpy.types.Panel):
         box = layout.box()
         box.label(text="3b. Surface", icon="MOD_SMOOTH")
         box.prop(s, "smooth_amount")
+        box.prop(s, "remesh_voxel")
         box.prop(s, "shade_smooth")
         box.operator("hp.smooth_shading", icon="MOD_SMOOTH")
         box.label(text="no extra triangles", icon="INFO")

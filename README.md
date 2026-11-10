@@ -73,16 +73,19 @@ shell, keep other vanilla meshes.
 ### Smoother without more polygons
 
 Decimating a 500k-triangle AI model down to the Skyrim budget leaves hard
-facets.  Two things fix that without spending a single triangle:
+facets - and the AI sculpts model their fur as thousands of thin shards that
+survive the decimation and show up as plates.  Three things fix that:
 
-* **Smooth** (a Laplacian pass) relaxes the shape - the surface goes soft and
-  the detail comes back from the normal map;
+* **Target x Vanilla** (default 4) - a *lower* budget collapses the shards
+  away.  More triangles means more shards, not more detail;
+* **Smooth** (a light Laplacian pass) relaxes what is left;
 * **Shade smooth** averages the normals across the faces, so the body shades
   as one continuous surface instead of a mosaic of flat triangles.  The NIF
   stores the normals, so this is free.
 
-If it still looks too soft, raise *Target x Vanilla* instead - that is the
-only knob that really buys detail.
+None of them costs a triangle.  **Remesh** (voxel) cleans the geometry up
+completely, but the UVs then have to be copied over by nearest point, which
+smears the texture - so it is off by default.
 
 ### The bind pose
 

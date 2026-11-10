@@ -1,4 +1,4 @@
-import bpy
+﻿import bpy
 import addon_utils
 import traceback
 
@@ -24,3 +24,4 @@ except Exception:
 
 print("=== STATUS ===")
 print(s.status)
+

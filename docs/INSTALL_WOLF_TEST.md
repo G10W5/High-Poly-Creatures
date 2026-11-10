@@ -74,8 +74,23 @@ own wolf NIFs will still replace ours — disable FluffyWorks for the test.
 | Wolf frozen in a T-pose or sliding without legs moving | weights/skinning broken |
 | Body invisible, only the fur shell shows | mesh or NIF corrupt |
 | Game crashes on spawn | NIF rejected — tell me and I will check the block layout |
-| Surface looks faceted / spiky | raise `Smooth` in the *Surface* section (free) or `Target x Vanilla` (costs triangles) |
+| Surface looks faceted / spiky | lower `Target x Vanilla` (the fur shards go away) and raise `Smooth` a little |
+| Flat plates on the body | the AI model's own fur geometry - lower `Target x Vanilla`; `Remesh` fixes it but smears the texture |
 | Vanilla fluff shell floating off the body | `Keep vanilla fur shell` is on — turn it off (it is off by default; that shell was modelled for the vanilla body) |
+
+## Smoother without more triangles
+
+The *Surface* section has three knobs that cost no triangles:
+
+| Setting | Effect |
+| --- | --- |
+| `Target x Vanilla` | the tri budget - a **lower** one collapses the AI model's fur shards away, more triangles keeps them |
+| `Smooth` | relaxes the decimated mesh; too much and the shards collapse into holes |
+| `Shade smooth` | averages the normals across the faces so the body shades as one surface instead of flat triangles |
+
+`Remesh` rebuilds the mesh as a clean voxel surface (which fixes the shards
+completely) but the UVs have to be copied over by nearest point afterwards,
+which smears the texture - so it is off by default.
 
 ## How the fur works
 

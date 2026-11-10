@@ -1,4 +1,4 @@
-"""Fur shells, FluffyWorks style.
+﻿"""Fur shells, FluffyWorks style.
 
 Checks the whole fur pipeline end to end:
   1. the shell texture is written with a broad alpha spread (the taper needs it)
@@ -31,7 +31,7 @@ c = hp.find_creature(root, "Creatures", "wolf")
 s = bpy.context.scene.hp
 s.mod, s.creature = "Creatures", "wolf"
 s.rotate_x, s.rotate_z, s.scale_multiplier = -90.0, 0.0, 1.0
-s.target_multiplier = 6
+s.target_multiplier = 4
 s.shell_count = 8
 s.shell_spacing = 0.2
 s.shell_tris = 3000
@@ -125,3 +125,4 @@ print(f"=== 4. vanilla Fur shape dropped: {fur_gone}")
 ok = (ok_tex and spread > 0.2 and len(shells) == 8 and grown and len(shell_shapes) == 8
       and ramp_ok and blend_ok and double_ok and skinned_ok and fur_gone and shell_tex_ok)
 print("=== RESULT:", "SHELL TEST OK" if ok else "SHELL TEST FAILED")
+
