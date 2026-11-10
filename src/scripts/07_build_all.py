@@ -42,7 +42,7 @@ def main() -> int:
     settings = bpy.context.scene.hp
     settings.target_multiplier = 2.5
     settings.shell_tris = 6000
-    settings.shell_spacing = 0.2
+    settings.shell_spacing = 0.25
     settings.shell_gap = 0.3
     settings.fur_count = 0
 
@@ -61,7 +61,7 @@ def main() -> int:
         settings.mod, settings.creature = c.mod, c.name
         settings.target_multiplier = 2.5
         settings.shell_tris = 6000
-        settings.shell_spacing = 0.2
+        settings.shell_spacing = 0.25
         settings.shell_gap = 0.3
         settings.fur_count = 0
         settings.auto_orient = True

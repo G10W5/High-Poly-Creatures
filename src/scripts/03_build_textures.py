@@ -106,6 +106,10 @@ def main() -> int:
     for folder in folders:
         for texroot in sorted(folder.glob("*/incoming/textures")):
             for png in sorted(texroot.rglob("*.png")):
+                # the fur mask is a working file (painted in Blender), not a
+                # texture the game ever loads
+                if png.stem.lower().endswith("_furmask"):
+                    continue
                 rel = png.relative_to(texroot)
                 out = ROOT / "build" / folder.name / "textures" / rel.with_suffix(".dds")
                 try:

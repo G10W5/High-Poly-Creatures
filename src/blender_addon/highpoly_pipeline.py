@@ -1246,7 +1246,7 @@ def do_setup_material(context, creature: Creature, root: Path) -> str:
     except Exception:
         shells = 0
     if shells > 0:
-        shell_img = _make_shell_image(diffuse, creature.name)
+        shell_img = _make_shell_image(diffuse, creature.name, tex_dir)
         png = tex_dir / f"{creature.name}_shell.png"
         shell_img.filepath_raw = str(png)
         shell_img.file_format = "PNG"
@@ -1267,7 +1267,7 @@ def do_setup_material(context, creature: Creature, root: Path) -> str:
 # taper is what makes it read as fur instead of a stack of skins.
 SHELL_PREFIX = "HP_Shell"
 SHELL_ALPHA_FLAGS = 4844        # PyNifly's default: alpha blend + alpha test
-SHELL_THRESHOLD_TOP = 240      # the outermost layer cuts at this alpha (FluffyWorks uses 15..240)
+SHELL_THRESHOLD_TOP = 170      # the outermost layer cuts at this alpha: lower = longer, fuzzier
 
 
 def _box_blur(array, radius: int):
@@ -1323,7 +1323,113 @@ def _value_noise(height, width, cells_y, cells_x, rng):
     return top * (1 - fy) + bottom * fy
 
 
-def _make_shell_image(diffuse_img, name: str, seed: int = 7):
+def fur_mask_png(root: Path, creature: Creature) -> Path:
+    return (incoming_dir(root, creature) / "textures" / "actors" /
+            creature.name / f"{creature.name}_furmask.png")
+
+
+def ensure_fur_mask(root: Path, creature: Creature) -> bpy.types.Image:
+    """The fur coverage mask: white = fur, black = bare skin.
+
+    It starts from the same coverage the generator would use on its own - the
+    dark parts of the coat - so it is never blank, and painting only has to
+    finish the job (the eyes, the nose, the paws, the claws).
+    """
+    tex_dir = incoming_dir(root, creature) / "textures" / "actors" / creature.name
+    path = fur_mask_png(root, creature)
+    if path.is_file():
+        return bpy.data.images.load(str(path), check_existing=True)
+
+    import numpy as np
+
+    diffuse_path = tex_dir / f"{creature.name}_d.png"
+    width = height = 2048
+    coverage = np.ones((height, width), dtype=np.float32)
+    if diffuse_path.is_file():
+        src = bpy.data.images.load(str(diffuse_path))
+        width, height = src.size
+        px = np.array(src.pixels[:], dtype=np.float32).reshape(height, width, 4)
+        rgb = px[:, :, :3]
+        luma = rgb[:, :, 0] * 0.3 + rgb[:, :, 1] * 0.6 + rgb[:, :, 2] * 0.1
+        soft = _box_blur(luma, 24)
+        coverage = np.clip((soft - 0.10) / 0.22, 0.0, 1.0).astype(np.float32)
+        bpy.data.images.remove(src)
+
+    buf = np.zeros((height, width, 4), dtype=np.float32)
+    buf[:, :, 0] = buf[:, :, 1] = buf[:, :, 2] = coverage
+    buf[:, :, 3] = 1.0
+    img = bpy.data.images.new(f"{creature.name}_furmask", width, height, alpha=True)
+    img.pixels = buf.ravel().tolist()
+    img.filepath_raw = str(path)
+    img.file_format = "PNG"
+    img.save()
+    img.filepath_raw = str(path)
+    return img
+
+
+def _open_image_in_editor(context, image) -> str:
+    """Show the mask somewhere it can be painted.
+
+    Prefer an Image Editor that is already open; otherwise split the current
+    view and turn the new half into one, which leaves the 3D view - and the
+    High Poly panel - where they are.
+    """
+    wm = context.window_manager
+    for window in wm.windows:
+        for area in window.screen.areas:
+            if area.type == "IMAGE_EDITOR":
+                area.spaces.active.image = image
+                return "mask opened in the Image Editor - paint black = no fur"
+
+    area = context.area
+    if area is None or area.type != "VIEW_3D":
+        return ("the mask is ready at " + image.filepath +
+                " - open an Image Editor (any panel's dropdown) to paint it")
+    region = next((r for r in area.regions if r.type == "WINDOW"), None)
+    window = context.window
+    before = {a.as_pointer() for a in window.screen.areas}
+    try:
+        with context.temp_override(area=area, region=region):
+            bpy.ops.screen.area_dupli(x=int(area.x + area.width / 2),
+                                      y=int(area.y + area.height / 2))
+    except Exception:
+        return ("the mask is ready at " + image.filepath +
+                " - open an Image Editor to paint it")
+    new = [a for a in window.screen.areas if a.as_pointer() not in before]
+    if not new:
+        return ("the mask is ready at " + image.filepath +
+                " - open an Image Editor to paint it")
+    new[0].type = "IMAGE_EDITOR"
+    new[0].spaces.active.image = image
+    return ("mask opened in a new Image Editor - black = no fur, white = fur; "
+            "paint, then press Rebuild Fur Texture")
+
+
+def do_rebuild_fur(root: Path, creature: Creature) -> str:
+    """Regenerate <creature>_shell.png from the diffuse plus the painted mask."""
+    diffuse_path = (incoming_dir(root, creature) / "textures" / "actors" /
+                    creature.name / f"{creature.name}_d.png")
+    if not diffuse_path.is_file():
+        return "cannot rebuild: no diffuse found"
+    diffuse = bpy.data.images.load(str(diffuse_path), check_existing=True)
+    size = 2048
+    try:
+        size = int(bpy.context.scene.hp.texture_size)
+    except Exception:
+        pass
+    if tuple(diffuse.size) != (size, size):
+        diffuse.scale(size, size)
+    tex_dir = diffuse_path.parent
+    img = _make_shell_image(diffuse, creature.name, tex_dir)
+    path = tex_dir / f"{creature.name}_shell.png"
+    img.filepath_raw = str(path)
+    img.file_format = "PNG"
+    img.save()
+    img.filepath_raw = str(path)
+    return f"fur texture rebuilt from {path.name}"
+
+
+def _make_shell_image(diffuse_img, name: str, tex_dir=None, seed: int = 7):
     """Build the shell texture: fur colour in RGB, strand mask in alpha.
 
     The alpha is what turns a stack of copies into fur, so it has to be made
@@ -1369,20 +1475,43 @@ def _make_shell_image(diffuse_img, name: str, seed: int = 7):
 
     ys, xs = np.mgrid[0:height, 0:width]
     stretched = np.zeros((height, width), dtype=np.float32)
-    steps = 8
+    steps = 16
     for k in range(1, steps + 1):
-        stretch = k * 0.9
+        stretch = k * 1.5
         stretched += _sample_bilinear(
             noise, xs + flow_x * stretch, ys + flow_y * stretch)
     stretched /= steps
 
     # sharpen into wisps
-    lo, hi = np.percentile(stretched, [40.0, 82.0])
+    lo, hi = np.percentile(stretched, [32.0, 86.0])
     strands = np.clip((stretched - lo) / max(hi - lo, 1e-5), 0.0, 1.0)
-    strands = strands ** 1.5
+    strands = strands ** 1.25
 
-    alpha = np.clip(0.34 + strands * 0.66, 0.0, 1.0)
+    alpha = np.clip(0.30 + strands * 0.70, 0.0, 1.0)
+
+    # where fur may grow: the painted mask replaces the automatic coverage so
+    # painting can both remove fur and put it back
     coverage = np.clip((_box_blur(luma, 24) - 0.10) / 0.22, 0.0, 1.0)
+    mask_img = None
+    target = f"{name}_furmask.png"
+    for candidate_img in bpy.data.images:
+        # Blender's image name after loading a file is the file name, which may
+        # or may not carry the extension - match on either
+        if candidate_img.filepath.endswith(target) or candidate_img.name in (
+                name + "_furmask", target):
+            mask_img = candidate_img
+            break
+    if mask_img is None and tex_dir:
+        candidate = tex_dir / target
+        if candidate.is_file():
+            mask_img = bpy.data.images.load(str(candidate))
+    if mask_img is not None:
+        # the in-memory copy: a mask that has just been painted may not have
+        # been saved to disk yet
+        if tuple(mask_img.size) != (width, height):
+            mask_img.scale(width, height)
+        painted = np.array(mask_img.pixels[:], dtype=np.float32).reshape(height, width, 4)
+        coverage = np.nan_to_num(painted[:, :, 0])
     alpha = alpha * coverage
 
     out = np.zeros((height, width, 4), dtype=np.float32)
@@ -1885,7 +2014,7 @@ class HPSettings(bpy.types.PropertyGroup):
                     "0 = no fur",
     )
     shell_spacing: bpy.props.FloatProperty(
-        name="Shell spacing", default=0.2, min=0.01, max=2.0,
+        name="Shell spacing", default=0.25, min=0.01, max=2.0,
         description="Distance between fur layers in Skyrim units (0.3 = 3 mm). "
                     "Total fur length = layers x spacing",
     )
@@ -2117,6 +2246,42 @@ class HP_OT_smooth_shading(_Base, bpy.types.Operator):
         return {"FINISHED"}
 
 
+class HP_OT_paint_fur_mask(_Base, bpy.types.Operator):
+    bl_idname = "hp.paint_fur_mask"
+    bl_label = "Edit Fur Mask"
+    bl_description = "Create the fur coverage mask and open it for painting: " \
+                     "black = no fur (eyes, nose, paws), white = fur"
+
+    @property
+    def settings(self):
+        return bpy.context.scene.hp
+
+    @_guard
+    def execute(self, context):
+        root, c = self._creature()
+        img = ensure_fur_mask(root, c)
+        note = _open_image_in_editor(context, img)
+        self.settings.status = note
+        self.report({"INFO"}, note)
+        return {"FINISHED"}
+
+
+class HP_OT_rebuild_fur(_Base, bpy.types.Operator):
+    bl_idname = "hp.rebuild_fur"
+    bl_label = "Rebuild Fur Texture"
+    bl_description = "Regenerate <creature>_shell.png from the diffuse and the painted mask"
+
+    @property
+    def settings(self):
+        return bpy.context.scene.hp
+
+    @_guard
+    def execute(self, context):
+        root, c = self._creature()
+        self.settings.status = do_rebuild_fur(root, c)
+        return {"FINISHED"}
+
+
 class HP_OT_make_fur(_Base, bpy.types.Operator):
     bl_idname = "hp.make_fur"
     bl_label = "Build Fur Cards"
@@ -2309,18 +2474,24 @@ class HP_PT_panel(bpy.types.Panel):
         box.operator("hp.setup_material", icon="TEXTURE")
 
         box = layout.box()
-        box.label(text="5. Fur", icon="MOD_PARTICLES")
+        box.label(text="5. Fur mask", icon="MOD_PARTICLES")
+        box.operator("hp.paint_fur_mask", icon="GREASEPENCIL")
+        box.operator("hp.rebuild_fur", icon="FILE_REFRESH")
+        box.label(text="black = no fur, white = fur", icon="INFO")
+
+        box = layout.box()
+        box.label(text="6. Fur cards", icon="MOD_EXPLODE")
         box.prop(s, "fur_count")
         box.prop(s, "fur_length")
         box.prop(s, "fur_width")
         box.prop(s, "fur_lay")
-        box.operator("hp.make_fur", icon="MOD_PARTICLES")
+        box.operator("hp.make_fur", icon="MOD_EXPLODE")
         fur = objects_with("fur")
         if fur:
             box.label(text=f"{len(fur[0].data.vertices) // 4:,} strands")
 
         box = layout.box()
-        box.label(text="6. Fur shells", icon="MOD_MESHDEFORM")
+        box.label(text="7. Fur shells", icon="MOD_MESHDEFORM")
         box.prop(s, "shell_count")
         box.prop(s, "shell_spacing")
         box.prop(s, "shell_gap")
@@ -2328,7 +2499,7 @@ class HP_PT_panel(bpy.types.Panel):
         box.operator("hp.make_shells", icon="MOD_MESHDEFORM")
 
         box = layout.box()
-        box.label(text="6. Export", icon="EXPORT")
+        box.label(text="8. Export", icon="EXPORT")
         box.prop(s, "keep_fur")
         box.prop(s, "keep_extra_vanilla")
         row = box.row(align=True)
@@ -2356,6 +2527,8 @@ CLASSES = (
     HP_OT_decimate,
     HP_OT_transfer_weights,
     HP_OT_smooth_shading,
+    HP_OT_paint_fur_mask,
+    HP_OT_rebuild_fur,
     HP_OT_make_fur,
     HP_OT_make_shells,
     HP_OT_setup_material,
