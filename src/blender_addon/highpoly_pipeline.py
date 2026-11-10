@@ -174,9 +174,16 @@ def main_nif(root: Path, creature: Creature) -> Path | None:
     if not files:
         return None
     preferred = [p for p in files if p.stem.lower() == creature.name.lower()]
-    if preferred:
-        return preferred[0]
-    return max(files, key=lambda p: p.stat().st_size)
+    if not preferred:
+        return max(files, key=lambda p: p.stat().st_size)
+    # Several creatures have more than one NIF with their name: the chicken
+    # has an ambient one (512 verts, no armature - cannot be rigged to) and a
+    # "character assets" one (509 verts, 32 bones).  The rigged folder is the
+    # one that can be transferred to, so prefer it.
+    rigged = [p for p in preferred if "character assets" in str(p).lower()]
+    if rigged:
+        return sorted(rigged, key=str)[0]
+    return sorted(preferred, key=str)[0]
 
 
 def first_delivery(root: Path, creature: Creature) -> Path | None:
@@ -334,6 +341,10 @@ def do_import_model(context, creature: Creature, root: Path, filepath: Path | No
         if extra is not model:
             extra.hide_set(True)
             extra.hide_render = True
+
+    # Merge the duplicated vertices the AI bake leaves behind *before* the
+    # decimation, otherwise the collapse turns them into cracks
+    _clean_mesh(model)
 
     # Take it straight to vanilla size/orientation: a raw GLB is ~1/140th of the
     # wolf and lies on the wrong axis, which looks alarming when it first lands.
@@ -1421,25 +1432,27 @@ def _make_shell_base(context, model, target_tris: int):
     return base
 
 
-def _clean_mesh(obj, merge: float = 0.01) -> int:
-    """Merge coincident vertices and drop degenerate faces.
+def _clean_mesh(obj, merge: float = 1e-4) -> int:
+    """Merge coincident vertices.
 
-    Relaxing the sculpted fur collapses its thin spikes into zero-area faces,
-    and decimating a mesh full of those produces garbage - the shell layers
-    came out as a cloud of loose triangles.  Cleaning first makes the
-    collapse behave.
+    The AI bakes leave duplicated vertices on top of each other, and the
+    decimator turns those into cracks - the thin white gaps that read as
+    shards in game.  Only truly coincident vertices are merged (the model is
+    in metres at this point, so 1e-4 is a hair); faces are never removed,
+    which is what an earlier "dissolve degenerate" pass did and why the mesh
+    came out full of holes.
     """
     import bmesh
 
     bm = bmesh.new()
     bm.from_mesh(obj.data)
-    before = len(bm.faces)
+    before = len(bm.verts)
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=merge)
-    bmesh.ops.dissolve_degenerate(bm, dist=merge * 5.0, edges=bm.edges)
+    after = len(bm.verts)
     bm.to_mesh(obj.data)
     bm.free()
     obj.data.update()
-    return before - len(obj.data.polygons)
+    return before - after
 
 
 def _cut_long_triangles(obj, factor: float = 2.5) -> int:
