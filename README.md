@@ -164,6 +164,31 @@ creature that should get these.
 Blender workflow: `File > Import > Nif File (.nif)` now works, so the vanilla meshes in
 `reference/` can be opened directly and modelled over.
 
+## Asset provenance (Nexus rules)
+
+Every texture this project ships is **generated from the AI models delivered
+in `raw_assets/`**:
+
+- `wolf_d.dds`, `wolf_n.dds` — converted from the model's own diffuse and
+  normal (texconv, PNG → BC7);
+- `<creature>_shell.dds` — **generated** by `_make_shell_image()`: the coat
+  colour copied from the model's diffuse, plus a procedural strand mask whose
+  flow comes from that same diffuse.
+
+Nothing is taken from another mod. Shell texturing is a *technique*, not an
+asset, and using the technique (or the `_shell.dds` naming convention, which
+Fur Shader Armors and the Shaders plugins also use) is fine; shipping
+FluffyWorks' or anyone else's DDS files is not, and we do not.
+
+Two things to keep watching:
+
+1. **Do not use another mod's screenshots as the AI model's reference image.**
+   A model generated from a photo of someone else's fur can be a derivative
+   work. The `reference/<mod>/<creature>/pose_side.png` renders come from the
+   vanilla game files, which is the normal, allowed basis for a replacer.
+2. The vanilla `_sk.dds` lighting map is deliberately *not* replaced - we keep
+   the game's own file untouched rather than shipping a copy.
+
 ## The three rules that matter
 
 1. **Do not re-export the whole creature NIF.** Creature NIFs carry collision, ragdoll
