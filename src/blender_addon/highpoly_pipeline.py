@@ -342,6 +342,26 @@ def do_import_model(context, creature: Creature, root: Path, filepath: Path | No
     return path.name + note
 
 
+def _bake_world_transform(model) -> None:
+    """Bake the object's world transform into the mesh and reset the object.
+
+    The orientation search measures the model in world space, so the rotation
+    has to be applied in world space as well.  A GLB often brings its own root
+    transform (a rotated root node), and without this the search would find
+    one orientation and the model would end up in another.
+    """
+    from mathutils import Matrix
+
+    matrix = model.matrix_world.copy()
+    if matrix == Matrix.Identity(4):
+        return
+    mesh = model.data
+    for v in mesh.vertices:
+        v.co = matrix @ v.co
+    mesh.update()
+    model.matrix_world = Matrix.Identity(4)
+
+
 def _clear_previous_fit(model) -> bool:
     """Undo the transform a previous Auto Fit baked into the vertices.
 
@@ -386,14 +406,32 @@ def do_fit(context, settings) -> str:
     had_weights = any(
         g.weight > 0.0 for v in model.data.vertices for g in v.groups) if model.vertex_groups else False
     _clear_previous_fit(model)
+    _bake_world_transform(model)
 
-    set_euler(
-        model,
-        math.radians(settings.rotate_x),
-        0.0,
-        math.radians(settings.rotate_z),
-    )
-    apply_transform(model, rotation=True)
+    orient_note = ""
+    applied_rot = (float(settings.rotate_x), 0.0, float(settings.rotate_z))
+    if settings.auto_orient:
+        # Try every axis-aligned orientation and keep the one whose bone
+        # weights would match the vanilla's best.  This is what stops a model
+        # with its head down (or facing the other way) from inheriting the
+        # wrong bones and deforming into a mess in game.
+        matrix, median, l1, spread = find_best_orientation(model, body)
+        model.rotation_mode = "XYZ"
+        model.rotation_euler = matrix.to_euler("XYZ")
+        applied_rot = tuple(math.degrees(v) for v in model.rotation_euler)
+        apply_transform(model, rotation=True)
+        orient_note = (
+            f", auto-oriented ({applied_rot[0]:.0f}/{applied_rot[1]:.0f}/"
+            f"{applied_rot[2]:.0f}, fit {median:.1f} units)"
+        )
+    else:
+        set_euler(
+            model,
+            math.radians(settings.rotate_x),
+            0.0,
+            math.radians(settings.rotate_z),
+        )
+        apply_transform(model, rotation=True)
 
     vlo, vhi = world_bbox(body)
     mlo, mhi = world_bbox(model)
@@ -431,7 +469,7 @@ def do_fit(context, settings) -> str:
     apply_transform(model, location=True)
 
     # Record exactly what was baked in, so the next Auto Fit can reverse it.
-    model["hp_fit_rot"] = (float(settings.rotate_x), 0.0, float(settings.rotate_z))
+    model["hp_fit_rot"] = applied_rot
     model["hp_fit_scale"] = (float(scale * fx), float(scale * fy), float(scale * fz))
     model["hp_fit_offset"] = off
 
@@ -453,8 +491,156 @@ def do_fit(context, settings) -> str:
             f"and regenerate the model from reference/<mod>/<creature>/pose_side.png"
         )
     return (
-        f"scale {scale:.2f}, dims {md.x:.2f} x {md.y:.2f} x {md.z:.2f}{axes}{note}"
+        f"scale {scale:.2f}, dims {md.x:.2f} x {md.y:.2f} x {md.z:.2f}"
+        f"{axes}{orient_note}{note}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# pose / orientation
+# --------------------------------------------------------------------------- #
+
+def _cube_rotations():
+    """The 24 axis-aligned rotations - every way a model can be turned.
+
+    An AI model can come in any of them (Y-up, Z-up, nose to +Y, nose to -Y),
+    and only one of them lines the model up with the vanilla body.
+    """
+    import itertools
+    from mathutils import Matrix
+
+    out = []
+    for perm in itertools.permutations(range(3)):
+        for signs in itertools.product((1, -1), repeat=3):
+            # start from zeros: an identity would keep its 1s in the other
+            # positions and turn these into something that is not a rotation
+            m = Matrix(((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
+            for row, col in enumerate(perm):
+                m[row][col] = float(signs[row])
+            if m.determinant() > 0:
+                out.append(m)
+    return out
+
+
+def _bone_share_table(obj):
+    """(names, per-vertex bone weight matrix) for a mesh."""
+    import numpy as np
+
+    names: list[str] = []
+    index: dict[str, int] = {}
+    rows = []
+    for v in obj.data.vertices:
+        row: dict[int, float] = {}
+        for g in v.groups:
+            if g.weight <= 0.0:
+                continue
+            name = obj.vertex_groups[g.group].name
+            if name.startswith("SBP_"):
+                continue
+            if name not in index:
+                index[name] = len(names)
+                names.append(name)
+            row[index[name]] = row.get(index[name], 0.0) + g.weight
+        rows.append(row)
+    matrix = np.zeros((len(rows), len(names)), dtype=np.float32)
+    for i, row in enumerate(rows):
+        for b, w in row.items():
+            matrix[i, b] = w
+    return names, index, matrix
+
+
+def _fit_transform(verts, body_lo, body_hi, uniform: bool = False):
+    """The fit the pipeline applies: match the vanilla's box.
+
+    With uniform=True only the largest axis is matched and the model keeps its
+    own proportions - that is what the orientation search scores with, because
+    a wrong orientation could otherwise "win" by being squashed flat until it
+    fits.
+    """
+    import numpy as np
+
+    lo = verts.min(axis=0)
+    hi = verts.max(axis=0)
+    dim = hi - lo
+    target = body_hi - body_lo
+    if uniform:
+        big = max(dim.max(), 1e-6)
+        factor = target.max() / big
+        scale = np.array([factor, factor, factor])
+    else:
+        scale = np.where(dim > 1e-6, target / np.maximum(dim, 1e-6), 1.0)
+    out = verts * scale
+    out = out - out.min(axis=0) + body_lo
+    return out, scale
+
+
+def find_best_orientation(model, body, samples: int = 4000):
+    """Pick the rotation that lines the model up with the vanilla body.
+
+    Scored by how closely the model then sits on the vanilla body (the median
+    distance from the model's surface to the vanilla's), with the bone weight
+    distribution as the tie breaker.
+
+    This matters more than it looks: an AI model is often delivered turned
+    around or upside down.  The bounding box fit cannot tell - a wolf on its
+    back has the same box as a wolf on its feet - so the model ends up
+    inheriting the wrong bones and the game deforms it into a mess.
+    """
+    import numpy as np
+    from mathutils import kdtree
+
+    body_matrix = body.matrix_world
+    body_verts = np.array([(body_matrix @ v.co)[:] for v in body.data.vertices],
+                          dtype=np.float64)
+    body_lo = body_verts.min(axis=0)
+    body_hi = body_verts.max(axis=0)
+
+    _names, _index, weights = _bone_share_table(body)
+    totals = weights.sum(axis=0)
+    vanilla_shares = totals / (totals.sum() or 1.0)
+
+    kd = kdtree.KDTree(len(body_verts))
+    for i, co in enumerate(body_verts):
+        kd.insert((float(co[0]), float(co[1]), float(co[2])), i)
+    kd.balance()
+
+    model_matrix = model.matrix_world
+    verts = np.array([(model_matrix @ v.co)[:] for v in model.data.vertices],
+                     dtype=np.float64)
+    step = max(1, len(verts) // samples)
+    probe = verts[::step]
+
+    target = body_hi - body_lo
+    best = None
+    for matrix in _cube_rotations():
+        rotation = np.array(matrix.transposed())
+        rotated = verts @ rotation
+        lo = rotated.min(axis=0)
+        hi = rotated.max(axis=0)
+        dim = hi - lo
+        scale = np.where(dim > 1e-6, target / np.maximum(dim, 1e-6), 1.0)
+        offset = body_lo - (rotated * scale).min(axis=0)
+
+        fitted = (probe @ rotation) * scale + offset
+        indices = []
+        dists = []
+        for p in fitted:
+            _, idx, d = kd.find((float(p[0]), float(p[1]), float(p[2])))
+            indices.append(idx)
+            dists.append(d)
+        shared = weights[indices].sum(axis=0)
+        shares = shared / (shared.sum() or 1.0)
+        l1 = float(np.abs(shares - vanilla_shares).sum())
+        median = float(np.median(dists))
+        spread = float(scale.max() / max(scale.min(), 1e-6))
+        # a correct orientation needs almost no squashing; a wrong one can
+        # only "fit" by being flattened, so the spread counts against it
+        key = (round(median * (1.0 + max(0.0, spread - 1.25)), 3), round(l1, 3))
+        if best is None or key < best[0]:
+            best = (key, matrix, (median, l1, spread))
+    key, matrix, info = best
+    median, l1, spread = info
+    return matrix, median, l1, spread
 
 
 # --------------------------------------------------------------------------- #
@@ -1240,12 +1426,22 @@ class HPSettings(bpy.types.PropertyGroup):
     )
     rotate_x: bpy.props.FloatProperty(
         name="Rotate X", default=-90.0,
-        description="Turns the imported model onto its feet - takes effect immediately",
+        description="Turns the imported model onto its feet - takes effect "
+                    "immediately. Ignored when Auto Orient is on",
         update=_refit_update,
     )
     rotate_z: bpy.props.FloatProperty(
         name="Rotate Z", default=0.0,
-        description="Turns the model left/right - takes effect immediately",
+        description="Turns the model left/right - takes effect immediately. "
+                    "Ignored when Auto Orient is on",
+        update=_refit_update,
+    )
+    auto_orient: bpy.props.BoolProperty(
+        name="Auto Orient", default=True,
+        description="Try all 24 axis-aligned orientations and keep the one "
+                    "whose bones line up with the vanilla body. A model with "
+                    "its head down, or facing the other way, otherwise "
+                    "inherits the wrong bones and deforms in game",
         update=_refit_update,
     )
     scale_multiplier: bpy.props.FloatProperty(
@@ -1593,6 +1789,7 @@ class HP_PT_panel(bpy.types.Panel):
             box.label(text=mesh_stats(model[0]))
         box.prop(s, "target_multiplier")
         box.prop(s, "target_tris")
+        box.prop(s, "auto_orient")
         box.prop(s, "rotate_x")
         box.prop(s, "rotate_z")
         box.prop(s, "fit_mode")

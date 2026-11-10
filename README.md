@@ -77,7 +77,12 @@ whatever stance the generator used (Skyrim's bear rears up on its hind legs,
 an AI bear stands on all fours), and the per-axis fit then stretches it to
 match a box that belongs to another pose.
 
-Every creature therefore has a reference render of its bind pose:
+**Auto Orient** (on by default) tries all 24 axis-aligned rotations and keeps
+the one that puts the model's surface closest to the vanilla body, so a model
+that arrives turned around or upside down still inherits the right bones.  The
+status shows how well it lined up: `auto-oriented (0/-0/180, fit 1.7 units)`.
+
+Every creature also has a reference render of its bind pose:
 
 ```
 reference\HighPolyCreatures\bear\pose_side.png

@@ -36,7 +36,30 @@ The add-on now warns about exactly this: when the per-axis fit factors differ
 by more than about 25 %, the status says the model's proportions differ from
 the vanilla's and its pose is probably wrong.
 
-## What to do about it
+## Auto Orient
+
+A model can also arrive **turned around or upside down**, and a bounding box
+cannot tell: a wolf on its back has the same box as a wolf on its feet. The
+model then inherits the wrong bones - the head region ends up on the spine -
+and the game deforms it into a mess.
+
+**Auto Orient** (on by default) tries all 24 axis-aligned rotations, keeps the
+one that puts the model's surface closest to the vanilla body, and prefers the
+orientation that needs no squashing:
+
+```
+wolf: auto-oriented (0/-0/180, fit 1.7 units)
+```
+
+1.7 units is the median distance between the model's surface and the vanilla
+body's - the AI wolf lands almost exactly on the vanilla wolf. For comparison,
+the orientation the pipeline used before (Rotate X = -90) came out at 6.2
+units and put the wolf on its back.
+
+Turn it off (`Auto Orient` in the panel) to use `Rotate X` / `Rotate Z` by
+hand - the manual angles are then used as they always were.
+
+## What to do about a wrong pose
 
 ### 1. Generate the model in the right pose
 
@@ -77,3 +100,8 @@ model cannot be morphed into a rearing one without tearing the mesh (the front
 legs have to become arms), and even for a matching pose the surface
 registration tore the fur. Re-posing is a job for the model, not for the
 pipeline - hence the reference renders.
+
+Auto Orient only fixes *orientation* (which way the model faces and whether it
+is upside down). It cannot fix a different stance: if the vanilla creature
+rears up and your model stands on all fours, no rotation will help - that
+model has to be generated again from the reference render.

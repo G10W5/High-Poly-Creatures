@@ -5,9 +5,11 @@ Rotate X after a fit could never do anything - the -90 was already in the mesh.
 Checks:
   1. import now auto-fits (right size/orientation immediately)
   2. fitting twice gives identical results (idempotent), and how long it takes
-  3. changing Rotate Z moves the model WITHOUT pressing anything (live update)
-  4. rotate_x 0 -> -90 returns to the original vertex positions (reversible)
-  5. re-fitting keeps decimation and skin weights
+  3. Auto Orient finds the orientation that lines the model up with the
+     vanilla body, and the manual angles are used when it is off
+  4. changing Rotate Z moves the model WITHOUT pressing anything (live update)
+  5. rotate_x 0 -> -90 returns to the original vertex positions (reversible)
+  6. re-fitting keeps decimation and skin weights
 
 Note: with "Match vanilla silhouette" the fitted bbox always equals vanilla's,
 so orientation is checked through vertex positions, not dimensions.
@@ -32,6 +34,7 @@ s.mod, s.creature = "Creatures", "wolf"
 s.rotate_x, s.rotate_z, s.scale_multiplier = -90.0, 0.0, 1.0
 s.fit_mode = "AXIS"
 s.target_multiplier = 6
+s.auto_orient = True
 
 hp.do_load_vanilla(bpy.context, c, root)
 hp.do_import_model(bpy.context, c, root)          # now auto-fits on import
@@ -66,33 +69,45 @@ ms = (time.perf_counter() - t0) * 1000
 drift = diff(co1, fp(model))
 print(f"=== 2. re-fit {ms:.0f} ms | drift {drift:.9f} | idempotent: {drift < 1e-4}")
 
-# --- live update ------------------------------------------------------------
+# --- Auto Orient ------------------------------------------------------------
+body = hp.objects_with("vanilla_body")[0]
+matrix, median, l1, spread = hp.find_best_orientation(model, body)
+print(f"=== 3. auto orient: fit {median:.1f} units | weight L1 {l1:.2f} | "
+      f"scale spread {spread:.2f}")
+auto_ok = median < 5.0 and spread < 1.5
+
+# the manual angles only apply with Auto Orient off
+s.auto_orient = False
+s.rotate_x, s.rotate_z = -90.0, 0.0
+hp.do_fit(bpy.context, s)
+manual = fp(model)
 s.rotate_z = 30.0                                   # no do_fit call on purpose
-live = diff(co1, fp(model))
-print("=== 3. rotate_z=30 moved the mesh by itself: drift", round(live, 4),
+live = diff(manual, fp(model))
+print("=== 4. rotate_z=30 moved the mesh by itself: drift", round(live, 4),
       "| recorded:", tuple(model.get("hp_fit_rot")))
 s.rotate_z = 0.0
 
 # --- reversible -------------------------------------------------------------
+manual_back = fp(model)
 s.rotate_x = 0.0
-away = diff(co1, fp(model))
+away = diff(manual_back, fp(model))
 s.rotate_x = -90.0
-drift2 = diff(co1, fp(model))
-print(f"=== 4. rotate_x 0 moved mesh: {away > 1e-4} (drift {away:.3f}) | "
+drift2 = diff(manual_back, fp(model))
+print(f"=== 5. rotate_x 0 moved mesh: {away > 1e-4} (drift {away:.3f}) | "
       f"back to -90 drift {drift2:.9f}")
 
 # --- keeps decimation and weights ------------------------------------------
-print("=== 5.", hp.do_decimate(bpy.context, s))
-print("=== 6.", hp.do_transfer_weights(bpy.context))
+print("=== 6.", hp.do_decimate(bpy.context, s))
+print("=== 7.", hp.do_transfer_weights(bpy.context))
 tris_before = hp.tri_count(model)
 weighted_before = sum(1 for v in model.data.vertices if any(g.weight > 0 for g in v.groups))
 
 hp.do_fit(bpy.context, s)                          # re-fit AFTER decimate + weights
 tris_after = hp.tri_count(model)
 weighted_after = sum(1 for v in model.data.vertices if any(g.weight > 0 for g in v.groups))
-print(f"=== 7. after re-fit: tris {tris_before} -> {tris_after}, "
+print(f"=== 8. after re-fit: tris {tris_before} -> {tris_after}, "
       f"weighted {weighted_before} -> {weighted_after}")
 
-ok = (drift < 1e-4 and live > 1e-4 and away > 1e-4 and drift2 < 1e-4
+ok = (drift < 1e-4 and auto_ok and live > 1e-4 and away > 1e-4 and drift2 < 1e-4
       and tris_after == tris_before and weighted_after == weighted_before)
 print("=== RESULT:", "FIT TEST OK" if ok else "FIT TEST FAILED")
