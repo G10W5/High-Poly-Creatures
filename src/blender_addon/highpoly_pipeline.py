@@ -1620,13 +1620,16 @@ def do_validate(context) -> str:
 
 
 def postprocess_nif(path: Path) -> str:
-    """Give the shell layers FluffyWorks' shader setup.
+    """Give the fur and the shell layers FluffyWorks' shader setup.
 
     The alpha blend and the per-layer threshold are written by the exporter
-    (they come from the material), but the DOUBLE_SIDED flag has no Blender
-    equivalent, so it is patched into the exported NIF.  Rim and soft lighting
-    are dropped as well: the vanilla _sk.dds lighting map belongs to the old
-    body and only muddies up the thin fur layers.
+    (they come from the material), but two things have no Blender equivalent
+    and are patched into the exported NIF:
+
+      * DOUBLE_SIDED - the fur cards are flat quads, so without this they
+        disappear as soon as you look at them from the other side;
+      * no rim/soft lighting - the vanilla _sk.dds lighting map belongs to
+        the old body and only muddies up the thin fur.
     """
     try:
         from pyn.pynifly import NifFile
@@ -1638,7 +1641,10 @@ def postprocess_nif(path: Path) -> str:
         nif = NifFile(str(path))
         patched = []
         for shape in nif.shapes:
-            if not shape.name.startswith(SHELL_PREFIX):
+            name = shape.name
+            is_shell = name.startswith(SHELL_PREFIX)
+            is_fur = "Fur" in name and not name.startswith("HP_")
+            if not (is_shell or is_fur):
                 continue
             shader = shape.shader
             props = shader.properties
@@ -1646,12 +1652,12 @@ def postprocess_nif(path: Path) -> str:
             props.shaderflags2_clear(ShaderFlags2.RIM_LIGHTING)
             props.shaderflags2_clear(ShaderFlags2.SOFT_LIGHTING)
             shader.properties = props
-            patched.append(shape.name)
+            patched.append(name)
         nif.save()
         nif.close()
     except Exception as exc:
         return f"shell patch failed: {exc}"
-    return f"{len(patched)} shells patched"
+    return f"{len(patched)} fur/shell shapes patched"
 
 
 def do_export(context, creature: Creature, root: Path, keep_fur=True, keep_extra=False) -> str:
@@ -1707,7 +1713,7 @@ def do_export(context, creature: Creature, root: Path, keep_fur=True, keep_extra
             o.hide_render = False
 
     patched = ""
-    if shells:
+    if shells or fur:
         patched = " | " + postprocess_nif(out)
 
     work = incoming_dir(root, creature).parent / "work"
@@ -1869,17 +1875,17 @@ class HPSettings(bpy.types.PropertyGroup):
                     "a high poly body",
     )
     fur_count: bpy.props.IntProperty(
-        name="Fur strands", default=8000, min=0, max=40000,
+        name="Fur strands", default=12000, min=0, max=15000,
         description="How many hair cards to scatter over the body. 0 = no "
                     "fur. Each strand is two triangles",
     )
     fur_length: bpy.props.FloatProperty(
-        name="Fur length", default=1.6, min=0.0, max=20.0,
+        name="Fur length", default=1.8, min=0.0, max=20.0,
         description="How long the strands stand off the skin, in Skyrim units "
                     "(1.6 = 1.6 cm)",
     )
     fur_width: bpy.props.FloatProperty(
-        name="Fur width", default=0.7, min=0.0, max=10.0,
+        name="Fur width", default=0.9, min=0.0, max=10.0,
         description="Width of a strand at its root",
     )
     fur_lay: bpy.props.FloatProperty(
@@ -2361,6 +2367,7 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+
 
 
 

@@ -33,7 +33,7 @@ s.mod, s.creature = "Creatures", "wolf"
 s.rotate_x, s.rotate_z, s.scale_multiplier = -90.0, 0.0, 1.0
 s.target_multiplier = 4
 s.shell_count = 0
-s.fur_count = 8000
+s.fur_count = 12000
 s.shell_spacing = 0.35
 s.shell_tris = 0
 s.keep_fur = False
@@ -152,6 +152,7 @@ ok = (ok_tex and spread > 0.2 and grown and fur_gone and fur_ok and fur_in_nif)
 if rows:
     ok = ok and ramp_ok and blend_ok and double_ok and skinned_ok and shell_tex_ok
 print("=== RESULT:", "SHELL TEST OK" if ok else "SHELL TEST FAILED")
+
 
 
 

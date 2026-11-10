@@ -116,12 +116,14 @@ Two ways to put fur on a creature:
 **Hair cards** (the default) - every strand is a small tapered quad standing
 off the skin, rooted on a vertex of the body and weighted to the same bones, so
 it follows the animation.  This is what makes the fur read as fur: the strands
-are *in the silhouette*, not painted on it.
+are *in the silhouette*, not painted on it.  The fur shape is made double
+sided after the export, otherwise the flat cards would only be visible from
+one side.
 
 | Setting | Effect |
 | --- | --- |
-| `Fur strands` | how many cards (default 8000, two triangles each) |
-| `Fur length` | how far they stand off the skin (1.6 = 1.6 cm) |
+| `Fur strands` | how many cards (default 12000, two triangles each) |
+| `Fur length` | how far they stand off the skin (1.8 = 1.8 cm) |
 | `Fur width` | the width of a strand at its root |
 | `Fur lay` | 0 = straight out, 1 = lying back along the body |
 
