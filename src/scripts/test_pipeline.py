@@ -14,7 +14,7 @@ s.creature = "wolf"
 s.target_multiplier = 4
 s.rotate_x = -90.0
 s.scale_multiplier = 1.0
-s.keep_fur = True
+s.keep_fur = False
 
 try:
     ret = bpy.ops.hp.run_all()
