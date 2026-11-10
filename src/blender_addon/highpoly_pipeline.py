@@ -1252,7 +1252,7 @@ def do_setup_material(context, creature: Creature, root: Path) -> str:
 # taper is what makes it read as fur instead of a stack of skins.
 SHELL_PREFIX = "HP_Shell"
 SHELL_ALPHA_FLAGS = 4844        # PyNifly's default: alpha blend + alpha test
-SHELL_THRESHOLD_STEP = 15       # FluffyWorks uses 15, 30, 45 ... 240
+SHELL_THRESHOLD_TOP = 120      # the outermost layer cuts at this alpha
 
 
 def _box_blur(array, radius: int):
@@ -1488,11 +1488,11 @@ def _set_alpha_threshold(mat, threshold: int) -> bool:
     return False
 
 
-def _shell_material(model, shell_png: Path, layer: int):
+def _shell_material(model, shell_png: Path, layer: int, threshold: int):
     """One material per shell layer.
 
-    Each layer gets its own alpha threshold (15, 30, 45 ...): the outer
-    layers must only keep the brightest strands of the strand mask, and that
+    Every layer gets its own alpha threshold: the inner layers keep almost the
+    whole coat while the outer ones only keep the brightest strands.  That
     taper is what makes the stack read as fur instead of a stack of skins.
     """
     src = next((m for m in model.data.materials if m), None)
@@ -1500,7 +1500,6 @@ def _shell_material(model, shell_png: Path, layer: int):
         raise RuntimeError("the model has no material - run Setup Material first")
     mat = src.copy()
     mat.name = f"{SHELL_PREFIX}_L{layer:02d}"
-    threshold = SHELL_THRESHOLD_STEP * layer
     _set_alpha_threshold(mat, threshold)
     mat["NiAlphaProperty_flags"] = SHELL_ALPHA_FLAGS
     mat["NiAlphaProperty_threshold"] = threshold
@@ -1538,7 +1537,8 @@ def do_make_shells(context, creature: Creature, root: Path, settings) -> str:
 
     made = []
     for layer in range(1, count + 1):
-        mat = _shell_material(model, shell_png, layer)
+        threshold = int(round(SHELL_THRESHOLD_TOP * layer / max(count, 1)))
+        mat = _shell_material(model, shell_png, layer, threshold)
         shell = base.copy()
         shell.data = base.data.copy()
         # no dots in the name: Blender treats ".001" as its own duplicate suffix
@@ -1860,23 +1860,23 @@ class HPSettings(bpy.types.PropertyGroup):
                     "and does not line up with a new mesh",
     )
     shell_count: bpy.props.IntProperty(
-        name="Fur shells", default=8, min=0, max=16,
+        name="Fur shells", default=5, min=0, max=16,
         description="Number of alpha-blended fur layers (FluffyWorks style). "
                     "0 = no fur",
     )
     shell_spacing: bpy.props.FloatProperty(
-        name="Shell spacing", default=0.3, min=0.01, max=2.0,
+        name="Shell spacing", default=0.4, min=0.01, max=2.0,
         description="Distance between fur layers in Skyrim units (0.3 = 3 mm). "
                     "Total fur length = layers x spacing",
     )
     shell_gap: bpy.props.FloatProperty(
-        name="Shell gap", default=0.9, min=0.0, max=10.0,
+        name="Shell gap", default=0.3, min=0.0, max=10.0,
         description="How far the first layer sits above the body. A layer "
                     "coarser than the body cuts across it, and the gap keeps "
                     "those facets inside the fur where they cannot be seen",
     )
     shell_tris: bpy.props.IntProperty(
-        name="Shell tris", default=3000, min=0, max=60000,
+        name="Shell tris", default=0, min=0, max=60000,
         description="Triangle budget for the mesh each fur layer is built from. "
                     "0 = same as the body, which is what the layers need to hug "
                     "it - a lower number is cheaper but the layers cut through "
@@ -2376,6 +2376,9 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+
+
+
 
 
 

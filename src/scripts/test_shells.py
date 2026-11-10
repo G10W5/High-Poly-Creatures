@@ -32,10 +32,10 @@ s = bpy.context.scene.hp
 s.mod, s.creature = "Creatures", "wolf"
 s.rotate_x, s.rotate_z, s.scale_multiplier = -90.0, 0.0, 1.0
 s.target_multiplier = 4
-s.shell_count = 8
+s.shell_count = 5
 s.fur_count = 0
-s.shell_spacing = 0.3
-s.shell_tris = 3000
+s.shell_spacing = 0.4
+s.shell_tris = 0
 s.keep_fur = False
 
 print("=== pipeline ===")
@@ -135,7 +135,8 @@ if fur_shapes:
 nif.close()
 
 thresholds = sorted(r[1] for r in rows)
-ramp_ok = thresholds == [15 * i for i in range(1, len(rows) + 1)]
+ramp_ok = (thresholds == sorted(thresholds)
+            and thresholds[0] > 0 and thresholds[-1] == hp.SHELL_THRESHOLD_TOP)
 blend_ok = all(r[2] == 4844 for r in rows)
 double_ok = all(r[3] for r in rows)
 skinned_ok = all(r[6] > 0 for r in rows)
@@ -154,6 +155,8 @@ if fur_objs:
 if rows:
     ok = ok and ramp_ok and blend_ok and double_ok and skinned_ok and shell_tex_ok
 print("=== RESULT:", "SHELL TEST OK" if ok else "SHELL TEST FAILED")
+
+
 
 
 

@@ -121,16 +121,19 @@ makes it read as a soft coat instead of a painted-on texture.
 
 | Setting | Effect |
 | --- | --- |
-| `Fur shells` | number of layers (8 by default, max 16) |
-| `Shell spacing` | distance between layers = fur length (0.3 = 3 mm) |
+| `Fur shells` | number of layers (5 by default, max 16) |
+| `Shell spacing` | distance between layers = fur length (0.4 = 4 mm) |
 | `Shell gap` | how far the first layer sits above the body |
-| `Shell tris` | how dense the layers are |
+| `Shell tris` | how dense the layers are (0 = as dense as the body) |
 
-`Shell gap` is what makes a cheap layer work: a layer coarser than the body
-cuts across it, and the gap keeps those facets inside the fur where they
-cannot be seen.  `Shell tris` = 0 means "as dense as the body", which hugs it
-perfectly but costs as much as the body (five layers of a 20k triangle wolf is
-12 MB of NIF).
+The layers **have to be as dense as the body** to hug it: a layer that is
+coarser cuts across the body and shows up as flat plates, which is what the
+first attempt looked like.  That makes the fur expensive - five layers of a
+20k triangle wolf is 14 MB of NIF - so `Fur shells = 0` (body only, 2.4 MB)
+stays a valid choice, and a lower `Target x Vanilla` makes everything cheaper.
+
+The thresholds are spread over the layers rather than fixed, so fewer layers
+still taper the same way (three layers get 40/80/120, five get 24/48/72/96/120).
 
 **Hair cards** (off by default) - every strand is a small tapered quad
 standing off the skin, rooted on a vertex of the body and weighted to the same
