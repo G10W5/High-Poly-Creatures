@@ -19,7 +19,7 @@ into your Skyrim data folder, so you end up with:
 <Data>\meshes\actors\canine\character assets wolf\wolfred.nif
 <Data>\textures\actors\wolf\wolf_d.dds
 <Data>\textures\actors\wolf\wolf_n.dds
-<Data>\textures\actors\wolf\wolf_hp_shell.dds
+<Data>\textures\actors\wolf\wolf_shell.dds
 ```
 
 Your game is at:
@@ -50,9 +50,12 @@ For a clean test, temporarily disable anything else that touches wolves
 (`actors\canine\...` or `textures\actors\wolf\...`).
 
 **FluffyWorks** in particular replaces the wolf NIFs *and* ships
-`textures\actors\wolf\wolf_shell.dds`. Our fur texture is called
-`wolf_hp_shell.dds` so the two never fight over the same file, but FluffyWorks'
-own wolf NIFs will still replace ours — disable FluffyWorks for the test.
+`textures\actors\wolf\wolf_shell.dds`. Our fur texture uses that same shared
+name (`wolf_shell.dds`, the convention Open Shaders / Fur Shader Armors
+expect), so whichever mod is higher in the load order supplies it — ours is
+generated from our own diffuse, so don't let FluffyWorks' file overwrite it.
+Disable FluffyWorks entirely for the test: its own wolf NIFs would still
+replace ours.
 
 ## In game
 
@@ -95,21 +98,21 @@ which smears the texture - so it is off by default.
 ## How the fur works
 
 The default is FluffyWorks' technique: a stack of **alpha-tested shell layers**
-(`HP_Shell_L01` … `HP_Shell_L08`), each a copy of the body pushed a bit
+(`HP_Shell_L01` … `HP_Shell_L16`), each a copy of the body pushed a bit
 further out.
 
-* the **strand mask** lives in the alpha channel of `wolf_hp_shell.dds` - fine,
+* the **strand mask** lives in the alpha channel of `wolf_shell.dds` - fine,
   dense strands combed along the model's own coat, with no fur on the dark
   parts (eyes, nose);
-* every layer has its **own alpha threshold** - 15, 30, 45 … 120 - so the
+* every layer has its **own alpha threshold** - roughly 11, 21 … 170 - so the
   inner layers keep the whole coat while the outer ones only keep the
   brightest strands.  That taper is what makes it read as a soft coat;
 * the layers are **double sided**, so the fur is there from every angle.
 
 | Setting | Effect |
 | --- | --- |
-| `Fur shells` | number of layers (8 by default, max 16) |
-| `Shell spacing` | distance between layers = fur length (0.3 = 3 mm) |
+| `Fur shells` | number of layers (16 by default) |
+| `Shell spacing` | distance between layers = fur length (0.25 = 2.5 mm, 4 mm over 16 layers) |
 | `Shell gap` | how far the first layer sits above the body |
 | `Shell tris` | how dense the layers are (0 = as dense as the body) |
 
