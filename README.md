@@ -111,34 +111,40 @@ factors come out near 1 and nothing is distorted.  See `docs/POSE_WORKFLOW.md`.
 
 ### Fur
 
-Two ways to put fur on a creature:
-
-**Hair cards** (the default) - every strand is a small tapered quad standing
-off the skin, rooted on a vertex of the body and weighted to the same bones, so
-it follows the animation.  This is what makes the fur read as fur: the strands
-are *in the silhouette*, not painted on it.  The fur shape is made double
-sided after the export, otherwise the flat cards would only be visible from
-one side.
+**Fur shells** (FluffyWorks' technique, the default) - a stack of alpha-tested
+copies of the body, each pushed a bit further out, with a **strand mask** in the
+alpha channel of `<creature>_hp_shell.dds`.  The mask is fine and dense (tiny
+strands, combed along the model's own coat), and every layer has its **own
+alpha threshold** (15, 30, 45 …), so the inner layers keep the whole coat
+while the outer ones only keep the brightest strands.  That taper is what
+makes it read as a soft coat instead of a painted-on texture.
 
 | Setting | Effect |
 | --- | --- |
-| `Fur strands` | how many cards (default 12000, two triangles each) |
+| `Fur shells` | number of layers (8 by default, max 16) |
+| `Shell spacing` | distance between layers = fur length (0.3 = 3 mm) |
+| `Shell gap` | how far the first layer sits above the body |
+| `Shell tris` | how dense the layers are |
+
+`Shell gap` is what makes a cheap layer work: a layer coarser than the body
+cuts across it, and the gap keeps those facets inside the fur where they
+cannot be seen.  `Shell tris` = 0 means "as dense as the body", which hugs it
+perfectly but costs as much as the body (five layers of a 20k triangle wolf is
+12 MB of NIF).
+
+**Hair cards** (off by default) - every strand is a small tapered quad
+standing off the skin, rooted on a vertex of the body and weighted to the same
+bones.  Cheaper than the shells, but it reads as *spiky bristles* rather than
+a soft coat, which is not what FluffyWorks does.  The fur shape is made
+double sided after the export, otherwise the flat cards would only be visible
+from one side.
+
+| Setting | Effect |
+| --- | --- |
+| `Fur strands` | how many cards (two triangles each) |
 | `Fur length` | how far they stand off the skin (1.8 = 1.8 cm) |
 | `Fur width` | the width of a strand at its root |
 | `Fur lay` | 0 = straight out, 1 = lying back along the body |
-
-**Fur shells** (FluffyWorks' technique, off by default) - a stack of
-alpha-tested copies of the body, each pushed further out, with a strand mask in
-the alpha channel of `<creature>_hp_shell.dds`.  It gives a soft coat, but on
-a high poly body it is expensive: a layer has to be as dense as the body to
-hug it, so five layers of a 20k triangle wolf cost 12 MB of NIF.  Hair cards
-give the same read for about a megabyte.
-
-| Setting | Effect |
-| --- | --- |
-| `Fur shells` | number of layers (0 = off) |
-| `Shell spacing` | distance between layers = fur length |
-| `Shell tris` | 0 = same density as the body, which is what the layers need to hug it |
 
 ## Tools installed
 

@@ -1344,9 +1344,9 @@ def _make_shell_image(diffuse_img, name: str, seed: int = 7):
     rng = np.random.default_rng(seed)
     noise = np.zeros((height, width), dtype=np.float32)
     amplitude, total = 1.0, 0.0
-    cells = 96
+    cells = 420
     for _ in range(3):
-        noise += _value_noise(height, width, max(2, cells // 4), cells, rng) * amplitude
+        noise += _value_noise(height, width, max(2, cells // 8), cells, rng) * amplitude
         total += amplitude
         amplitude *= 0.5
         cells *= 2
@@ -1354,19 +1354,19 @@ def _make_shell_image(diffuse_img, name: str, seed: int = 7):
 
     ys, xs = np.mgrid[0:height, 0:width]
     stretched = np.zeros((height, width), dtype=np.float32)
-    steps = 12
+    steps = 8
     for k in range(1, steps + 1):
-        stretch = k * 1.6
+        stretch = k * 0.9
         stretched += _sample_bilinear(
             noise, xs + flow_x * stretch, ys + flow_y * stretch)
     stretched /= steps
 
     # sharpen into wisps
-    lo, hi = np.percentile(stretched, [35.0, 75.0])
+    lo, hi = np.percentile(stretched, [40.0, 82.0])
     strands = np.clip((stretched - lo) / max(hi - lo, 1e-5), 0.0, 1.0)
-    strands = strands ** 1.6
+    strands = strands ** 1.5
 
-    alpha = np.clip(0.38 + strands * 0.62, 0.0, 1.0)
+    alpha = np.clip(0.34 + strands * 0.66, 0.0, 1.0)
     coverage = np.clip((_box_blur(luma, 24) - 0.10) / 0.22, 0.0, 1.0)
     alpha = alpha * coverage
 
@@ -1534,6 +1534,7 @@ def do_make_shells(context, creature: Creature, root: Path, settings) -> str:
 
     base = _make_shell_base(context, model, int(settings.shell_tris))
     spacing = float(settings.shell_spacing)
+    gap = float(settings.shell_gap)
 
     made = []
     for layer in range(1, count + 1):
@@ -1547,12 +1548,13 @@ def do_make_shells(context, creature: Creature, root: Path, settings) -> str:
         # link first: applying a modifier needs the object in the view layer
         context.collection.objects.link(shell)
 
-        # Push the layer out along the skin's normal.  The skin is the body
-        # with the sculpted fur spikes relaxed away, so the layers grow out of
-        # the skin instead of turning the spikes into plates.
+        # Push the layer out along the skin's normal.  The first layer starts
+        # a gap away from the body: a layer that is coarser than the body
+        # cuts across it, and the gap keeps those facets inside the fur where
+        # they cannot be seen.
         mesh = shell.data
         for v in mesh.vertices:
-            v.co += v.normal * (layer * spacing)
+            v.co += v.normal * (gap + layer * spacing)
         mesh.update()
 
         tag([shell], "shell")
@@ -1858,24 +1860,30 @@ class HPSettings(bpy.types.PropertyGroup):
                     "and does not line up with a new mesh",
     )
     shell_count: bpy.props.IntProperty(
-        name="Fur shells", default=0, min=0, max=16,
+        name="Fur shells", default=8, min=0, max=16,
         description="Number of alpha-blended fur layers (FluffyWorks style). "
                     "0 = no fur",
     )
     shell_spacing: bpy.props.FloatProperty(
-        name="Shell spacing", default=0.35, min=0.01, max=2.0,
+        name="Shell spacing", default=0.3, min=0.01, max=2.0,
         description="Distance between fur layers in Skyrim units (0.3 = 3 mm). "
                     "Total fur length = layers x spacing",
     )
+    shell_gap: bpy.props.FloatProperty(
+        name="Shell gap", default=0.9, min=0.0, max=10.0,
+        description="How far the first layer sits above the body. A layer "
+                    "coarser than the body cuts across it, and the gap keeps "
+                    "those facets inside the fur where they cannot be seen",
+    )
     shell_tris: bpy.props.IntProperty(
-        name="Shell tris", default=0, min=0, max=60000,
+        name="Shell tris", default=3000, min=0, max=60000,
         description="Triangle budget for the mesh each fur layer is built from. "
                     "0 = same as the body, which is what the layers need to hug "
                     "it - a lower number is cheaper but the layers cut through "
                     "a high poly body",
     )
     fur_count: bpy.props.IntProperty(
-        name="Fur strands", default=12000, min=0, max=15000,
+        name="Fur strands", default=0, min=0, max=15000,
         description="How many hair cards to scatter over the body. 0 = no "
                     "fur. Each strand is two triangles",
     )
@@ -2295,6 +2303,7 @@ class HP_PT_panel(bpy.types.Panel):
         box.label(text="6. Fur shells", icon="MOD_MESHDEFORM")
         box.prop(s, "shell_count")
         box.prop(s, "shell_spacing")
+        box.prop(s, "shell_gap")
         box.prop(s, "shell_tris")
         box.operator("hp.make_shells", icon="MOD_MESHDEFORM")
 
@@ -2367,6 +2376,9 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+
+
+
 
 
 
