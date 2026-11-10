@@ -111,13 +111,13 @@ factors come out near 1 and nothing is distorted.  See `docs/POSE_WORKFLOW.md`.
 
 ### Fur
 
-**Fur shells** (FluffyWorks' technique, the default) - a stack of alpha-tested
-copies of the body, each pushed a bit further out, with a **strand mask** in the
-alpha channel of `<creature>_hp_shell.dds`.  The mask is fine and dense (tiny
-strands, combed along the model's own coat), and every layer has its **own
-alpha threshold** (15, 30, 45 …), so the inner layers keep the whole coat
-while the outer ones only keep the brightest strands.  That taper is what
-makes it read as a soft coat instead of a painted-on texture.
+**Baked shell layers (default)** - a stack of alpha-tested copies of the body,
+each pushed a bit further out, with a **strand mask** in the alpha channel of
+`<creature>_shell.dds`.  The mask is fine and dense (tiny strands, combed
+along the model's own coat), and every layer gets its **own alpha threshold**
+so the inner layers keep the whole coat while the outer ones only keep the
+brightest strands.  That taper is what makes it read as a soft coat instead of
+a painted-on texture.  No add-ons needed - same as FluffyWorks.
 
 | Setting | Effect |
 | --- | --- |
@@ -127,27 +127,31 @@ makes it read as a soft coat instead of a painted-on texture.
 | `Shell tris` | how dense the layers are (0 = as dense as the body) |
 
 The layers **have to be as dense as the body** to hug it: a layer that is
-coarser cuts across the body and shows up as flat plates, which is what the
-first attempt looked like.  That makes the fur expensive - five layers of a
+coarser cuts across the body and shows up as flat plates.  Five layers of a
 20k triangle wolf is 14 MB of NIF - so `Fur shells = 0` (body only, 2.4 MB)
-stays a valid choice, and a lower `Target x Vanilla` makes everything cheaper.
+stays a choice, and a lower `Target x Vanilla` makes everything cheaper.
 
 The thresholds are spread over the layers rather than fixed, so fewer layers
 still taper the same way (three layers get 40/80/120, five get 24/48/72/96/120).
 
-**Hair cards** (off by default) - every strand is a small tapered quad
-standing off the skin, rooted on a vertex of the body and weighted to the same
-bones.  Cheaper than the shells, but it reads as *spiky bristles* rather than
-a soft coat, which is not what FluffyWorks does.  The fur shape is made
-double sided after the export, otherwise the flat cards would only be visible
-from one side.
+**`_shell.dds` for Open Shaders / Bottled Shaders (optional)** - the same
+texture is what their *Fur Shells* feature looks for, and that shader draws
+the layers itself:
 
-| Setting | Effect |
-| --- | --- |
-| `Fur strands` | how many cards (two triangles each) |
-| `Fur length` | how far they stand off the skin (1.8 = 1.8 cm) |
-| `Fur width` | the width of a strand at its root |
-| `Fur lay` | 0 = straight out, 1 = lying back along the body |
+> *"Draws layered fur ... from the `_shell.dds` textures ... No fur meshes
+> needed ... Length, density and droop can be changed ... Mod authors can add
+> fur to anything by putting a `_shell.dds` next to its texture."*
+
+With Open Shaders installed: set `Fur shells = 0` and keep only the body and
+the texture - the shader generates the fur, with **inertia, wind, wet fur in
+the rain** and in-game sliders, at ~2.4 MB instead of 14 MB.  The mod ships
+the texture either way, so both routes are covered.
+
+**Hair cards (off by default)** - real strand geometry: small tapered quads
+standing off the skin, weighted to the body's bones and double sided so they
+are visible from every angle.  Cheaper than the layers, but reads as *spiky
+bristles* rather than a soft coat.  Set the CSV `fur` column to `cards` for a
+creature that should get these.
 
 ## Tools installed
 

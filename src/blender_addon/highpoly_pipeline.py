@@ -43,6 +43,7 @@ class Creature:
     category: str
     prefixes: str
     notes: str = ""
+    fur: str = "none"          # shell | cards | none
 
 
 # --------------------------------------------------------------------------- #
@@ -107,6 +108,7 @@ def load_creatures(root: Path) -> list[Creature]:
                     row["mod"].strip(), row["page"].strip(), row["creature"].strip(),
                     row["category"].strip(), row["prefixes"].strip(),
                     (row.get("notes") or "").strip(),
+                    (row.get("fur") or "none").strip(),
                 )
             )
     return out
@@ -521,6 +523,8 @@ def do_make_fur(context, creature: Creature, root: Path, settings) -> str:
     model = model[0]
 
     count = int(settings.fur_count)
+    if creature.fur != "cards":
+        count = 0
     delete_role("fur")
     if count <= 0:
         return "fur: off"
@@ -1232,7 +1236,7 @@ def do_setup_material(context, creature: Creature, root: Path) -> str:
         shells = 0
     if shells > 0:
         shell_img = _make_shell_image(diffuse, creature.name)
-        png = tex_dir / f"{creature.name}_hp_shell.png"
+        png = tex_dir / f"{creature.name}_shell.png"
         shell_img.filepath_raw = str(png)
         shell_img.file_format = "PNG"
         shell_img.save()
@@ -1519,14 +1523,16 @@ def do_make_shells(context, creature: Creature, root: Path, settings) -> str:
     model = model[0]
 
     count = int(settings.shell_count)
+    if creature.fur == "none":
+        # the registry says this creature has no coat (spiders, crabs, wisps)
+        count = 0
     delete_role("shell")
     if count <= 0:
         return "shells: off"
 
     tex_dir = incoming_dir(root, creature) / "textures" / "actors" / creature.name
-    # "_hp_shell" and not "_shell": FluffyWorks already ships <creature>_shell.dds
-    # for its own fur, and the two must not fight over the same file name.
-    shell_png = tex_dir / f"{creature.name}_hp_shell.png"
+    # <creature>_shell.dds is the shared convention (FluffyWorks, Fur Shader\n    # Armors and the Fur Shells shader all look for it), so it has to keep that name.
+    shell_png = tex_dir / f"{creature.name}_shell.png"
     if not shell_png.is_file():
         raise RuntimeError(
             f"shell texture {shell_png.name} is missing - run Setup Material first")
@@ -2376,6 +2382,7 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+
 
 
 

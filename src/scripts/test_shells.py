@@ -66,7 +66,7 @@ if fur_objs:
 import numpy as np  # noqa: E402
 
 tex_dir = hp.incoming_dir(root, c) / "textures" / "actors" / c.name
-shell_png = tex_dir / f"{c.name}_hp_shell.png"
+shell_png = tex_dir / f"{c.name}_shell.png"
 ok_tex = shell_png.is_file()
 print(f"=== 1. shell texture {shell_png.name}: {ok_tex}")
 spread = 0.0
@@ -155,6 +155,7 @@ if fur_objs:
 if rows:
     ok = ok and ramp_ok and blend_ok and double_ok and skinned_ok and shell_tex_ok
 print("=== RESULT:", "SHELL TEST OK" if ok else "SHELL TEST FAILED")
+
 
 
 

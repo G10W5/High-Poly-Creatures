@@ -1,72 +1,72 @@
-mod,page,creature,category,prefixes,notes
-Creatures,Beasts,wolf,wildlife,actors\canine\character assets wolf,Four colour variants share one skeleton. Replace wolf.nif plus variants.
-Creatures,Beasts,dog,wildlife,actors\canine\character assets dog,Vanilla dog. Shares no skeleton with wolf.
-Creatures,Beasts,bear,wildlife,actors\bear\character assets,Cave and snow bear variants.
-Creatures,Beasts,sabrecat,wildlife,actors\sabrecat\character assets,
-Creatures,Beasts,mammoth,wildlife,actors\mammoth\character assets,Large skin surface. Watch the tusk and trunk bones.
-Creatures,Beasts,mudcrab,wildlife,actors\mudcrab\character assets,
-Creatures,Beasts,frostbitespider,wildlife,actors\frostbitespider\character assets,Eight legs. High bone count.
-Creatures,Beasts,skeever,wildlife,actors\skeever\character assets,
-Creatures,Beasts,horker,wildlife,actors\horker\character assets,
-Creatures,Beasts,deer,wildlife,actors\deer\character assets,
-Creatures,Beasts,slaughterfish,wildlife,actors\slaughterfish\character assets,
-Creatures,Farm_Ambient,fox,wildlife,actors\wolf\fox*.nif;actors\wolf\character assets\skeleton.nif,Fox reuses the wolf rig. Only the fox meshes and its skeleton belong here.
-Creatures,Farm_Ambient,hare,wildlife,actors\ambient\hare,
-Creatures,Farm_Ambient,chicken,wildlife,actors\chicken;actors\ambient\chicken,
-Creatures,Farm_Ambient,cow,wildlife,actors\cow\character assets,
-Creatures,Farm_Ambient,highlandcow,wildlife,actors\highlandcow,
-Creatures,Farm_Ambient,horse,wildlife,actors\horse\character assets,
-Creatures,Farm_Ambient,goat,wildlife,actors\goat\character assets,
-Creatures,DLC01,vale_sabrecat,wildlife,actors\dlc01\sabrecat,Dawnguard. Vale sabre cat.
-Creatures,DLC01,vale_elk,wildlife,actors\dlc01\elk,Dawnguard. Vale elk and Blackreach deer.
-Creatures,DLC01,armored_husky,wildlife,actors\dlc01\armoreddog,Dawnguard. Armoured husky - armor is a separate mesh.
-Creatures,DLC01,soulcairn_horse,wildlife,actors\dlc01\horse,Dawnguard. Soul Cairn horse / Arvak (horsebone).
-Creatures,DLC02,netch,wildlife,actors\dlc02\netch,Dragonborn. Includes netch calf.
-Creatures,DLC02,scrib,wildlife,actors\dlc02\scrib,Dragonborn. Small critter.
-Enemies,Monsters,troll,monster,actors\troll\character assets,
-Enemies,Monsters,giant,monster,actors\giant\character assets,Uses a club as a separate mesh.
-Enemies,Monsters,spriggan,monster,actors\spriggan\character assets,Alpha-blended hair and FX attachments.
-Enemies,Monsters,hagraven,monster,actors\hagraven\character assets,Alpha-blended feathers and hair.
-Enemies,Monsters,atronachflame,monster,actors\atronachflame\character assets,Body FX are separate NIFs. Keep attach node names.
-Enemies,Monsters,atronachfrost,monster,actors\atronachfrost\character assets,
-Enemies,Monsters,atronachstorm,monster,actors\atronachstorm\character assets,
-Enemies,Monsters,chaurus,monster,actors\chaurus\character assets,
-Enemies,Monsters,icewraith,monster,actors\icewraith\character assets,
-Enemies,Monsters,wisp,monster,actors\wisp\character assets,
-Enemies,Monsters,witchlight,monster,actors\witchlight\character assets,
-Enemies,Monsters,werewolfbeast,monster,actors\werewolfbeast\character assets;actors\werewolf\character assets\skeleton.nif,Player werewolf. Body and head are separate meshes; skeleton lives in actors\werewolf.
-Enemies,Monsters,vampirelord,monster,actors\vampirelord\character assets,Player vampire lord. Armor and cape are separate meshes.
-Enemies,Undead,draugr,undead,actors\draugr\character assets,Includes skeleton and boneman/wrathman variants. Dismemberment partitions matter.
-Enemies,Undead,dragonpriest,undead,actors\dragonpriest\character assets,Masks are separate meshes. Do not merge them into the body.
-Enemies,Dwemer,dwarven_sphere,automaton,actors\dwarvenspherecenturion\character assets,
-Enemies,Dwemer,dwarven_spider,automaton,actors\dwarvenspider\character assets,
-Enemies,Dwemer,dwarven_centurion,automaton,actors\dwarvensteamcenturion\character assets,Steam FX are separate NIFs.
-Enemies,Falmer,falmer,monster,actors\falmer\character assets,Body is armour-driven. Bone and weight transfer are critical here.
-Enemies,Dragons,dragon,dragon,actors\dragon,Includes named and colour variants plus farskin LODs. Replace only the body variants.
-Enemies,Dragons,alduin,dragon,actors\alduin,Alduin is a separate mesh. Highest rig risk in the project.
-Enemies,DLC01,frost_giant,monster,actors\dlc01\frostgiant,Dawnguard.
-Enemies,DLC01,chaurus_hunter,monster,actors\dlc01\chaurusflyer,Dawnguard. Flying rig.
-Enemies,DLC01,chaurus_frozen,monster,actors\dlc01\chaurusfrozen,Dawnguard.
-Enemies,DLC01,falmer_vampire,monster,actors\dlc01\falmervampire,Dawnguard. Winged variants included.
-Enemies,DLC01,soul_wisp,monster,actors\dlc01\soulwisp,Dawnguard.
-Enemies,DLC01,vampire_brute,monster,actors\dlc01\vampirebrute,Dawnguard.
-Enemies,DLC01,ancient_frost_atronach,monster,actors\dlc01\ancientfrostatronach,Dawnguard.
-Enemies,DLC01,dragon_dlc01,dragon,actors\dlc01\dragon,Dawnguard. Purple and ice-lake variants.
-Enemies,DLC01,spriggan_matron,monster,actors\dlc01\spriggan,Dawnguard. Matron variant.
-Enemies,DLC02,werebear,monster,actors\dlc02\werebear,Dragonborn. Includes transformation mesh.
-Enemies,DLC02,ash_mudcrab,monster,actors\dlc02\mudcrabash,Dragonborn.
-Enemies,DLC02,dragon_dlc02,dragon,actors\dlc02\dragon,Dragonborn. Black variant.
-Enemies,DLC02,albino_spider,monster,actors\dlc02\spider_poison,Dragonborn. Albino and zombie spider bodies. Ignore the 60+ FX/explosion NIFs.
-Enemies,DLC02,riekling,monster,actors\dlc02\riekling,Dragonborn.
-Enemies,DLC02,boar_riekling,monster,actors\dlc02\boarriekling,Dragonborn. Bristleback mount plus rider.
-Enemies,DLC02,hulking_draugr,undead,actors\dlc02\hulkingdraugr,Dragonborn.
-Enemies,DLC02,lurker,monster,actors\dlc02\benthiclurker,Dragonborn. Tentacle parts are separate meshes.
-Enemies,DLC02,dragon_priest_acolyte,undead,actors\dlc02\dragonpriestacolyte,Dragonborn.
-Enemies,DLC02,wingless_dragon,dragon,actors\dlc02\winglessdragon,Dragonborn.
-Enemies,DLC02,seeker,monster,actors\dlc02\hmdaedra,Dragonborn. The hmdaedra folder is the Seeker.
-Enemies,DLC02,dwarven_ballista,automaton,actors\dlc02\dwarvenballistacenturion,Dragonborn.
-Enemies,DLC02,ash_spawn,monster,actors\dlc02\ashman,Dragonborn.
-Enemies,DLC02,ash_atronach,monster,actors\dlc02\stormatronachash,Dragonborn.
-Enemies,DLC02,frost_giant_dlc02,monster,actors\dlc02\dlc2frostgiant,Dragonborn. Karstaag.
-Enemies,DLC02,burnt_spriggan,monster,actors\dlc02\sprigganburnt,Dragonborn.
-Enemies,DLC02,spectral_dragon_head,dragon,actors\dlc02\spectraldragonhead,Dragonborn. Optional - projectile/head prop.
+mod,page,creature,category,prefixes,fur,notes
+Creatures,Beasts,wolf,wildlife,actors\canine\character assets wolf,shell,Four colour variants share one skeleton. Replace wolf.nif plus variants.
+Creatures,Beasts,dog,wildlife,actors\canine\character assets dog,shell,Vanilla dog. Shares no skeleton with wolf.
+Creatures,Beasts,bear,wildlife,actors\bear\character assets,shell,Cave and snow bear variants.
+Creatures,Beasts,sabrecat,wildlife,actors\sabrecat\character assets,shell,
+Creatures,Beasts,mammoth,wildlife,actors\mammoth\character assets,shell,Large skin surface. Watch the tusk and trunk bones.
+Creatures,Beasts,mudcrab,wildlife,actors\mudcrab\character assets,none,
+Creatures,Beasts,frostbitespider,wildlife,actors\frostbitespider\character assets,none,Eight legs. High bone count.
+Creatures,Beasts,skeever,wildlife,actors\skeever\character assets,shell,
+Creatures,Beasts,horker,wildlife,actors\horker\character assets,none,
+Creatures,Beasts,deer,wildlife,actors\deer\character assets,shell,
+Creatures,Beasts,slaughterfish,wildlife,actors\slaughterfish\character assets,none,
+Creatures,Farm_Ambient,fox,wildlife,actors\wolf\fox*.nif;actors\wolf\character assets\skeleton.nif,shell,Fox reuses the wolf rig. Only the fox meshes and its skeleton belong here.
+Creatures,Farm_Ambient,hare,wildlife,actors\ambient\hare,shell,
+Creatures,Farm_Ambient,chicken,wildlife,actors\chicken;actors\ambient\chicken,shell,
+Creatures,Farm_Ambient,cow,wildlife,actors\cow\character assets,shell,
+Creatures,Farm_Ambient,highlandcow,wildlife,actors\highlandcow,shell,
+Creatures,Farm_Ambient,horse,wildlife,actors\horse\character assets,shell,
+Creatures,Farm_Ambient,goat,wildlife,actors\goat\character assets,shell,
+Creatures,DLC01,vale_sabrecat,wildlife,actors\dlc01\sabrecat,shell,Dawnguard. Vale sabre cat.
+Creatures,DLC01,vale_elk,wildlife,actors\dlc01\elk,shell,Dawnguard. Vale elk and Blackreach deer.
+Creatures,DLC01,armored_husky,wildlife,actors\dlc01\armoreddog,shell,Dawnguard. Armoured husky - armor is a separate mesh.
+Creatures,DLC01,soulcairn_horse,wildlife,actors\dlc01\horse,shell,Dawnguard. Soul Cairn horse / Arvak (horsebone).
+Creatures,DLC02,netch,wildlife,actors\dlc02\netch,none,Dragonborn. Includes netch calf.
+Creatures,DLC02,scrib,wildlife,actors\dlc02\scrib,none,Dragonborn. Small critter.
+Enemies,Monsters,troll,monster,actors\troll\character assets,shell,
+Enemies,Monsters,giant,monster,actors\giant\character assets,none,Uses a club as a separate mesh.
+Enemies,Monsters,spriggan,monster,actors\spriggan\character assets,none,Alpha-blended hair and FX attachments.
+Enemies,Monsters,hagraven,monster,actors\hagraven\character assets,none,Alpha-blended feathers and hair.
+Enemies,Monsters,atronachflame,monster,actors\atronachflame\character assets,none,Body FX are separate NIFs. Keep attach node names.
+Enemies,Monsters,atronachfrost,monster,actors\atronachfrost\character assets,none,
+Enemies,Monsters,atronachstorm,monster,actors\atronachstorm\character assets,none,
+Enemies,Monsters,chaurus,monster,actors\chaurus\character assets,none,
+Enemies,Monsters,icewraith,monster,actors\icewraith\character assets,none,
+Enemies,Monsters,wisp,monster,actors\wisp\character assets,none,
+Enemies,Monsters,witchlight,monster,actors\witchlight\character assets,none,
+Enemies,Monsters,werewolfbeast,monster,actors\werewolfbeast\character assets;actors\werewolf\character assets\skeleton.nif,shell,Player werewolf. Body and head are separate meshes; skeleton lives in actors\werewolf.
+Enemies,Monsters,vampirelord,monster,actors\vampirelord\character assets,none,Player vampire lord. Armor and cape are separate meshes.
+Enemies,Undead,draugr,undead,actors\draugr\character assets,none,Includes skeleton and boneman/wrathman variants. Dismemberment partitions matter.
+Enemies,Undead,dragonpriest,undead,actors\dragonpriest\character assets,none,Masks are separate meshes. Do not merge them into the body.
+Enemies,Dwemer,dwarven_sphere,automaton,actors\dwarvenspherecenturion\character assets,none,
+Enemies,Dwemer,dwarven_spider,automaton,actors\dwarvenspider\character assets,none,
+Enemies,Dwemer,dwarven_centurion,automaton,actors\dwarvensteamcenturion\character assets,none,Steam FX are separate NIFs.
+Enemies,Falmer,falmer,monster,actors\falmer\character assets,none,Body is armour-driven. Bone and weight transfer are critical here.
+Enemies,Dragons,dragon,dragon,actors\dragon,none,Includes named and colour variants plus farskin LODs. Replace only the body variants.
+Enemies,Dragons,alduin,dragon,actors\alduin,none,Alduin is a separate mesh. Highest rig risk in the project.
+Enemies,DLC01,frost_giant,monster,actors\dlc01\frostgiant,none,Dawnguard.
+Enemies,DLC01,chaurus_hunter,monster,actors\dlc01\chaurusflyer,none,Dawnguard. Flying rig.
+Enemies,DLC01,chaurus_frozen,monster,actors\dlc01\chaurusfrozen,none,Dawnguard.
+Enemies,DLC01,falmer_vampire,monster,actors\dlc01\falmervampire,none,Dawnguard. Winged variants included.
+Enemies,DLC01,soul_wisp,monster,actors\dlc01\soulwisp,none,Dawnguard.
+Enemies,DLC01,vampire_brute,monster,actors\dlc01\vampirebrute,none,Dawnguard.
+Enemies,DLC01,ancient_frost_atronach,monster,actors\dlc01\ancientfrostatronach,none,Dawnguard.
+Enemies,DLC01,dragon_dlc01,dragon,actors\dlc01\dragon,none,Dawnguard. Purple and ice-lake variants.
+Enemies,DLC01,spriggan_matron,monster,actors\dlc01\spriggan,none,Dawnguard. Matron variant.
+Enemies,DLC02,werebear,monster,actors\dlc02\werebear,shell,Dragonborn. Includes transformation mesh.
+Enemies,DLC02,ash_mudcrab,monster,actors\dlc02\mudcrabash,none,Dragonborn.
+Enemies,DLC02,dragon_dlc02,dragon,actors\dlc02\dragon,none,Dragonborn. Black variant.
+Enemies,DLC02,albino_spider,monster,actors\dlc02\spider_poison,none,Dragonborn. Albino and zombie spider bodies. Ignore the 60+ FX/explosion NIFs.
+Enemies,DLC02,riekling,monster,actors\dlc02\riekling,shell,Dragonborn.
+Enemies,DLC02,boar_riekling,monster,actors\dlc02\boarriekling,shell,Dragonborn. Bristleback mount plus rider.
+Enemies,DLC02,hulking_draugr,undead,actors\dlc02\hulkingdraugr,none,Dragonborn.
+Enemies,DLC02,lurker,monster,actors\dlc02\benthiclurker,none,Dragonborn. Tentacle parts are separate meshes.
+Enemies,DLC02,dragon_priest_acolyte,undead,actors\dlc02\dragonpriestacolyte,none,Dragonborn.
+Enemies,DLC02,wingless_dragon,dragon,actors\dlc02\winglessdragon,none,Dragonborn.
+Enemies,DLC02,seeker,monster,actors\dlc02\hmdaedra,none,Dragonborn. The hmdaedra folder is the Seeker.
+Enemies,DLC02,dwarven_ballista,automaton,actors\dlc02\dwarvenballistacenturion,none,Dragonborn.
+Enemies,DLC02,ash_spawn,monster,actors\dlc02\ashman,none,Dragonborn.
+Enemies,DLC02,ash_atronach,monster,actors\dlc02\stormatronachash,none,Dragonborn.
+Enemies,DLC02,frost_giant_dlc02,monster,actors\dlc02\dlc2frostgiant,none,Dragonborn. Karstaag.
+Enemies,DLC02,burnt_spriggan,monster,actors\dlc02\sprigganburnt,none,Dragonborn.
+Enemies,DLC02,spectral_dragon_head,dragon,actors\dlc02\spectraldragonhead,none,Dragonborn. Optional - projectile/head prop.
