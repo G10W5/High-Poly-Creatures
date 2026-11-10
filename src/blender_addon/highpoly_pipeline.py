@@ -438,9 +438,90 @@ def do_fit(context, settings) -> str:
     mlo, mhi = world_bbox(model)
     md = mhi - mlo
     note = " | already weighted: re-run Transfer Weights" if had_weights else ""
+
+    # How far the model's proportions are from the vanilla's.  A model that is
+    # already in the vanilla's stance fits with nearly the same scale on every
+    # axis; a model in a different stance (Skyrim's bear rears up, an AI bear
+    # stands on all fours) has to be squashed to fit the box, and its
+    # animation will be wrong no matter how well it is scaled.
+    spread = max(fx, fy, fz) / max(min(fx, fy, fz), 1e-6)
+    if spread > 1.25:
+        note += (
+            f" | WARNING: the model's proportions differ from the vanilla's "
+            f"({spread:.2f}x) - it is probably in a different pose than the "
+            f"bind pose Skyrim animates. Use the 'Keep model proportions' fit "
+            f"and regenerate the model from reference/<mod>/<creature>/pose_side.png"
+        )
     return (
         f"scale {scale:.2f}, dims {md.x:.2f} x {md.y:.2f} x {md.z:.2f}{axes}{note}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# pose
+# --------------------------------------------------------------------------- #
+
+def _bone_weight_tables(obj):
+    """(bone names, per vertex list of (bone index, weight)).
+
+    The SBP_* groups are NiSkinPartition markers, not bones, so they are
+    skipped.
+    """
+    names: list[str] = []
+    index: dict[str, int] = {}
+    per_vertex: list[list[tuple[int, float]]] = []
+    for v in obj.data.vertices:
+        entries: list[tuple[int, float]] = []
+        for g in v.groups:
+            if g.weight <= 0.0:
+                continue
+            name = obj.vertex_groups[g.group].name
+            if name.startswith("SBP_"):
+                continue
+            if name not in index:
+                index[name] = len(names)
+                names.append(name)
+            entries.append((index[name], float(g.weight)))
+        per_vertex.append(entries)
+    return names, index, per_vertex
+
+
+def _principal_axis(points, weights):
+    """Weighted principal direction of a point cloud (None if degenerate)."""
+    import numpy as np
+
+    if len(points) < 3:
+        return None
+    p = np.asarray(points, dtype=np.float64)
+    w = np.asarray(weights, dtype=np.float64)
+    total = w.sum()
+    if total <= 0.0:
+        return None
+    mean = (p * w[:, None]).sum(axis=0) / total
+    d = p - mean
+    cov = (d * w[:, None]).T @ d / total
+    try:
+        values, vectors = np.linalg.eigh(cov)
+    except np.linalg.LinAlgError:
+        return None
+    axis = vectors[:, int(np.argmax(values))]
+    norm = float(np.linalg.norm(axis))
+    if norm < 1e-9:
+        return None
+    return mean, axis / norm
+
+
+def _model_edges(mesh) -> list[tuple[int, int]]:
+    edges: list[tuple[int, int]] = []
+    for poly in mesh.polygons:
+        vs = list(poly.vertices)
+        for i in range(len(vs)):
+            a, b = vs[i], vs[(i + 1) % len(vs)]
+            if a < b:
+                edges.append((a, b))
+            else:
+                edges.append((b, a))
+    return edges
 
 
 def do_decimate(context, settings) -> str:
@@ -1519,6 +1600,7 @@ class HP_PT_panel(bpy.types.Panel):
         row = box.row(align=True)
         row.operator("hp.fit", icon="SNAP_ON")
         row.operator("hp.decimate", icon="MOD_DECIM")
+
 
         box = layout.box()
         box.label(text="3. Rig", icon="ARMATURE_DATA")

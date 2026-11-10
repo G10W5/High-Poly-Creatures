@@ -69,6 +69,23 @@ Settings: target tri budget (x vanilla), rotation, fit mode, texture size (1K/2K
 fur shells (count / spacing / mesh detail), keep the vanilla fur shell, keep other
 vanilla meshes.
 
+### The bind pose
+
+A replacement mesh has to be delivered in the vanilla mesh's **bind pose** - the
+stance Skyrim's animation clips are authored against.  An AI model comes in
+whatever stance the generator used (Skyrim's bear rears up on its hind legs,
+an AI bear stands on all fours), and the per-axis fit then stretches it to
+match a box that belongs to another pose.
+
+Every creature therefore has a reference render of its bind pose:
+
+```
+reference\HighPolyCreatures\bear\pose_side.png
+```
+
+Feed it to the image generator and ask for the same stance - then the fit
+factors come out near 1 and nothing is distorted.  See `docs/POSE_WORKFLOW.md`.
+
 ### Fur shells (FluffyWorks style)
 
 The fur is a stack of alpha-tested copies of the body, the same trick FluffyWorks
@@ -133,6 +150,7 @@ dist/                  release archives (generated)
 - [x] Wolf pilot: GLB -> fit -> decimate -> weights -> material -> NIF -> DDS
 - [x] Texture build (PNG -> BC7 DDS, full mips) and FOMOD packaging
 - [x] FluffyWorks-style fur shells (alpha-tested layer stack, per-layer threshold)
+- [x] Bind-pose reference renders for all 71 creatures (`docs/POSE_WORKFLOW.md`)
 - [ ] In-game test of the wolf (install `build/HighPolyCreatures` into Data, spawn a wolf)
 - [ ] Second colour variant / `wolf1..4` handling
 - [ ] Remaining 70 creatures
