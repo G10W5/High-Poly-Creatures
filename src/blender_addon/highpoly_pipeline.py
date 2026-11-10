@@ -1812,11 +1812,12 @@ class HPSettings(bpy.types.PropertyGroup):
     )
     creature: bpy.props.EnumProperty(name="Creature", items=creature_items)
     model_file: bpy.props.StringProperty(name="Model", subtype="FILE_PATH")
-    target_multiplier: bpy.props.IntProperty(
-        name="Target x Vanilla", default=4, min=1, max=64,
+    target_multiplier: bpy.props.FloatProperty(
+        name="Target x Vanilla", default=2.5, min=0.5, max=64.0,
         description="Tri budget as a multiple of vanilla. The AI sculpts "
                     "model their fur as thousands of thin shards, and a high "
-                    "budget keeps them - they show up as plates",
+                    "budget keeps them - they show up as plates through the "
+                    "fur. 2.5x collapses them away",
     )
     target_tris: bpy.props.IntProperty(
         name="Target Tris", default=0, min=0,

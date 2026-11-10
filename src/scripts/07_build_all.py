@@ -1,4 +1,4 @@
-"""Build every creature that has a model in incoming/.
+﻿"""Build every creature that has a model in incoming/.
 
 Runs the whole pipeline for each one and reports the numbers that matter:
 how well the model lined up with the vanilla body (the pose fit), the tri
@@ -40,7 +40,7 @@ def has_model(creature) -> bool:
 def main() -> int:
     only = [a.lower() for a in sys.argv[sys.argv.index("--") + 1:]] if "--" in sys.argv else []
     settings = bpy.context.scene.hp
-    settings.target_multiplier = 4
+    settings.target_multiplier = 2.5
     settings.shell_tris = 0
     settings.shell_spacing = 0.4
     settings.shell_gap = 0.3
@@ -59,7 +59,7 @@ def main() -> int:
         addon_utils.enable("highpoly_pipeline", default_set=True)
         settings = bpy.context.scene.hp
         settings.mod, settings.creature = c.mod, c.name
-        settings.target_multiplier = 4
+        settings.target_multiplier = 2.5
         settings.shell_tris = 0
         settings.shell_spacing = 0.4
         settings.shell_gap = 0.3
@@ -98,3 +98,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
