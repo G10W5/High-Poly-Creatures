@@ -1013,8 +1013,41 @@ SHELL_ALPHA_FLAGS = 4844        # PyNifly's default: alpha blend + alpha test
 SHELL_THRESHOLD_STEP = 15       # FluffyWorks uses 15, 30, 45 ... 240
 
 
-def _value_noise(height: int, width: int, cells_y: int, cells_x: int, rng):
-    """Bilinear value noise, stretched along V so it reads as strands."""
+def _box_blur(array, radius: int):
+    """Box blur over a 2D float array (cumulative sums, no scipy)."""
+    import numpy as np
+
+    if radius < 1:
+        return array
+    pad = np.pad(array, radius, mode="edge")
+    c = np.cumsum(pad, axis=0)
+    out = (c[2 * radius:] - c[:-2 * radius]) / (2 * radius)
+    c = np.cumsum(out, axis=1)
+    return (c[:, 2 * radius:] - c[:, :-2 * radius]) / (2 * radius)
+
+
+def _sample_bilinear(field, xs, ys):
+    """Bilinear sample of a 2D field at float coordinates (numpy only)."""
+    import numpy as np
+
+    h, w = field.shape
+    x0 = np.floor(xs).astype(np.int32)
+    y0 = np.floor(ys).astype(np.int32)
+    fx = xs - x0
+    fy = ys - y0
+    x0 = np.clip(x0, 0, w - 1)
+    x1 = np.clip(x0 + 1, 0, w - 1)
+    y0 = np.clip(y0, 0, h - 1)
+    y1 = np.clip(y0 + 1, 0, h - 1)
+    v00 = field[y0, x0]
+    v01 = field[y0, x1]
+    v10 = field[y1, x0]
+    v11 = field[y1, x1]
+    return ((v00 * (1 - fx) + v01 * fx) * (1 - fy) + (v10 * (1 - fx) + v11 * fx) * fy)
+
+
+def _value_noise(height, width, cells_y, cells_x, rng):
+    """Bilinear value noise - the raw material for the strand pattern."""
     import numpy as np
 
     grid = rng.random((cells_y + 1, cells_x + 1)).astype(np.float32)
@@ -1033,36 +1066,23 @@ def _value_noise(height: int, width: int, cells_y: int, cells_x: int, rng):
     return top * (1 - fy) + bottom * fy
 
 
-def _strand_mask(height: int, width: int, seed: int = 7):
-    """Fur strand mask with a broad value spread.
-
-    The spread matters: the shells fade because each layer has a higher alpha
-    threshold, so the mask has to cover the whole range - dense inner layers
-    keep nearly everything, the outer ones only the brightest strands.
-    """
-    import numpy as np
-
-    rng = np.random.default_rng(seed)
-    mask = np.zeros((height, width), dtype=np.float32)
-    amplitude = 1.0
-    total = 0.0
-    cells = 48
-    for _ in range(4):
-        # fine across U, coarse along V -> long thin strands
-        mask += _value_noise(height, width, max(2, cells // 8), cells, rng) * amplitude
-        total += amplitude
-        amplitude *= 0.5
-        cells *= 2
-    mask /= total
-    return np.clip((mask - 0.5) * 1.7 + 0.55, 0.0, 1.0)
-
-
 def _make_shell_image(diffuse_img, name: str, seed: int = 7):
     """Build the shell texture: fur colour in RGB, strand mask in alpha.
 
-    The RGB is a copy of the diffuse so the fur keeps the coat colour.  The
-    alpha is scaled by a blurred version of the diffuse, so dark features (eyes,
-    nose, mouth) end up with almost no fur on them.
+    The alpha is what turns a stack of copies into fur, so it has to be made
+    of long thin wisps, not blobs:
+
+      * the fur flow comes from the model's own coat - the gradient of the
+        blurred diffuse points across the sculpted strands, so the flow is
+        perpendicular to it;
+      * a noise field is then *averaged along that flow*, which stretches it
+        into long thin strands that comb the right way;
+      * the strands are then sharpened into wisps and scaled by a blurred
+        version of the diffuse, so the dark parts of the coat (eyes, nose)
+        get no fur.
+
+    A soft base value keeps a wide spread of alpha values, which is what lets
+    the per-layer thresholds thin the fur out.
     """
     import numpy as np
 
@@ -1071,20 +1091,42 @@ def _make_shell_image(diffuse_img, name: str, seed: int = 7):
     rgb = pixels[:, :, :3].copy()
     luma = rgb[:, :, 0] * 0.3 + rgb[:, :, 1] * 0.6 + rgb[:, :, 2] * 0.1
 
-    # blur the luma so isolated dark specks do not punch holes in the fur
-    blurred = bpy.data.images.new("hp_luma_tmp", width, height)
-    buf = np.zeros((height, width, 4), dtype=np.float32)
-    buf[:, :, 0] = buf[:, :, 1] = buf[:, :, 2] = luma
-    buf[:, :, 3] = 1.0
-    blurred.pixels = buf.ravel().tolist()
-    blurred.scale(max(8, width // 16), max(8, height // 16))
-    blurred.scale(width, height)
-    soft = np.array(blurred.pixels[:], dtype=np.float32).reshape(height, width, 4)[:, :, 0]
-    bpy.data.images.remove(blurred)
+    # --- the fur flow, from the coat's own shading --------------------------
+    soft = _box_blur(luma, 12)
+    gy, gx = np.gradient(soft)
+    mag = np.sqrt(gx * gx + gy * gy) + 1e-6
+    flow_x = -gy / mag          # along the strands
+    flow_y = gx / mag
 
-    coverage = np.clip((soft - 0.12) / 0.28, 0.0, 1.0)
-    mask = _strand_mask(height, width, seed=seed)
-    alpha = np.clip(mask * 0.8 + 0.2, 0.0, 1.0) * coverage
+    # --- noise stretched along the flow -------------------------------------
+    rng = np.random.default_rng(seed)
+    noise = np.zeros((height, width), dtype=np.float32)
+    amplitude, total = 1.0, 0.0
+    cells = 96
+    for _ in range(3):
+        noise += _value_noise(height, width, max(2, cells // 4), cells, rng) * amplitude
+        total += amplitude
+        amplitude *= 0.5
+        cells *= 2
+    noise /= total
+
+    ys, xs = np.mgrid[0:height, 0:width]
+    stretched = np.zeros((height, width), dtype=np.float32)
+    steps = 12
+    for k in range(1, steps + 1):
+        stretch = k * 1.6
+        stretched += _sample_bilinear(
+            noise, xs + flow_x * stretch, ys + flow_y * stretch)
+    stretched /= steps
+
+    # sharpen into wisps
+    lo, hi = np.percentile(stretched, [35.0, 75.0])
+    strands = np.clip((stretched - lo) / max(hi - lo, 1e-5), 0.0, 1.0)
+    strands = strands ** 1.6
+
+    alpha = np.clip(0.38 + strands * 0.62, 0.0, 1.0)
+    coverage = np.clip((_box_blur(luma, 24) - 0.10) / 0.22, 0.0, 1.0)
+    alpha = alpha * coverage
 
     out = np.zeros((height, width, 4), dtype=np.float32)
     out[:, :, :3] = rgb
@@ -1525,8 +1567,8 @@ class HPSettings(bpy.types.PropertyGroup):
                     "0 = no fur",
     )
     shell_spacing: bpy.props.FloatProperty(
-        name="Shell spacing", default=0.2, min=0.01, max=2.0,
-        description="Distance between fur layers in Skyrim units (0.2 = 2 mm). "
+        name="Shell spacing", default=0.3, min=0.01, max=2.0,
+        description="Distance between fur layers in Skyrim units (0.3 = 3 mm). "
                     "Total fur length = layers x spacing",
     )
     shell_tris: bpy.props.IntProperty(
