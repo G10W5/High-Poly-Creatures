@@ -1269,6 +1269,15 @@ SHELL_PREFIX = "HP_Shell"
 SHELL_ALPHA_FLAGS = 4844        # PyNifly's default: alpha blend + alpha test
 SHELL_THRESHOLD_TOP = 170      # the outermost layer cuts at this alpha: lower = longer, fuzzier
 
+# The strand mask, tuned against FluffyWorks' own mask: the flow vectors are
+# smoothed so the strands comb in parallel, and a fine octave adds the strand
+# detail.  Measured on the wolf: anisotropy 4.2 (FluffyWorks 5.3, the raw
+# gradient 1.8) and 871 strand crossings along a scanline (FluffyWorks 929).
+SHELL_LUMA_BLUR = 40
+SHELL_FLOW_BLUR = 80
+SHELL_FINE_CELLS = 4000
+SHELL_FINE_AMOUNT = 0.3
+
 
 def _box_blur(array, radius: int):
     """Box blur over a 2D float array (cumulative sums, no scipy)."""
@@ -1455,11 +1464,23 @@ def _make_shell_image(diffuse_img, name: str, tex_dir=None, seed: int = 7):
     luma = rgb[:, :, 0] * 0.3 + rgb[:, :, 1] * 0.6 + rgb[:, :, 2] * 0.1
 
     # --- the fur flow, from the coat's own shading --------------------------
-    soft = _box_blur(luma, 12)
+    soft = _box_blur(luma, SHELL_LUMA_BLUR)
     gy, gx = np.gradient(soft)
     mag = np.sqrt(gx * gx + gy * gy) + 1e-6
     flow_x = -gy / mag          # along the strands
     flow_y = gx / mag
+
+    # Smooth the vectors themselves.  The raw gradient of an AI texture is
+    # noisy, so every little bump sends the strands a different way and the
+    # coat reads as swirled rather than combed.  Blurring the vectors and
+    # renormalising makes the strands run parallel across a whole region -
+    # this is what brings the mask level with FluffyWorks' (anisotropy 4.2
+    # against their 5.3, where the raw gradient gave 1.8).
+    flow_x = _box_blur(flow_x, SHELL_FLOW_BLUR)
+    flow_y = _box_blur(flow_y, SHELL_FLOW_BLUR)
+    mag = np.sqrt(flow_x * flow_x + flow_y * flow_y) + 1e-6
+    flow_x /= mag
+    flow_y /= mag
 
     # --- noise stretched along the flow -------------------------------------
     rng = np.random.default_rng(seed)
@@ -1481,6 +1502,19 @@ def _make_shell_image(diffuse_img, name: str, tex_dir=None, seed: int = 7):
         stretched += _sample_bilinear(
             noise, xs + flow_x * stretch, ys + flow_y * stretch)
     stretched /= steps
+
+    # --- a fine octave for the strand detail --------------------------------
+    # The combed noise on its own is too smooth: FluffyWorks' mask has ~900
+    # strand crossings along a scanline against our ~400, so their strands are
+    # finer.  A second, much finer octave stretched along the same smoothed
+    # flow puts that detail back without undoing the combing.
+    fine = _value_noise(height, width, SHELL_FINE_CELLS // 8, SHELL_FINE_CELLS, rng)
+    fine_stretched = np.zeros((height, width), dtype=np.float32)
+    for k in range(1, 9):
+        fine_stretched += _sample_bilinear(
+            fine, xs + flow_x * k * 2.0, ys + flow_y * k * 2.0)
+    fine_stretched /= 8
+    stretched = stretched * (1.0 - SHELL_FINE_AMOUNT) + fine_stretched * SHELL_FINE_AMOUNT
 
     # sharpen into wisps
     lo, hi = np.percentile(stretched, [32.0, 86.0])

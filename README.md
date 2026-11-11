@@ -49,6 +49,7 @@ py src/scripts/04_build_fomod.py       # zip build/ into dist/ with a FOMOD (add
 py src/scripts/08_build_variants.py    # colour variants (config/variants.csv) - run after 07, before 04
 py src/scripts/test_pipeline.py        # headless regression test of the Blender addon (wolf)
 py src/scripts/test_variants.py        # the tinted coats and the repointed variant NIFs
+py src/scripts/test_shell_mask.py      # the strand mask vs FluffyWorks' (combing, fineness)
 py src/scripts/verify_nif.py           # shapes / bones / partitions / textures of a built NIF
 ```
 
@@ -123,8 +124,8 @@ a painted-on texture.  No add-ons needed - same as FluffyWorks.
 
 | Setting | Effect |
 | --- | --- |
-| `Fur shells` | number of layers (5 by default, max 16) |
-| `Shell spacing` | distance between layers = fur length (0.4 = 4 mm) |
+| `Fur shells` | number of layers (16 by default) |
+| `Shell spacing` | distance between layers = fur length (0.25 = 2.5 mm) |
 | `Shell gap` | how far the first layer sits above the body |
 | `Shell tris` | how dense the layers are (0 = as dense as the body) |
 
@@ -135,6 +136,21 @@ stays a choice, and a lower `Target x Vanilla` makes everything cheaper.
 
 The thresholds are spread over the layers rather than fixed, so fewer layers
 still taper the same way (three layers get 40/80/120, five get 24/48/72/96/120).
+
+**The strand mask is measured against FluffyWorks' own.**  Their mask is the
+reference for "does this look like fur", and the first version of ours was
+measurably worse: the strands **swirled** instead of combing, because the fur
+flow followed every bump in the AI diffuse.  The flow vectors are now smoothed
+before the noise is stretched along them, which makes the strands run parallel
+across a region, and a fine octave adds the strand detail back:
+
+| | anisotropy (1 = swirled, high = combed) | strand crossings |
+| --- | --- | --- |
+| FluffyWorks' `wolf_shell.dds` | 5.28 | 929 |
+| ours, before | 1.78 | 584 |
+| ours, now | 3.88 | 970 |
+
+`py src/scripts/test_shell_mask.py` keeps it from regressing.
 
 **`_shell.dds` for Open Shaders / Bottled Shaders (optional)** - the same
 texture is what their *Fur Shells* feature looks for, and that shader draws
