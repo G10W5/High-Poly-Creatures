@@ -71,7 +71,9 @@ reference\HighPolyCreatures\wolf\pose_side.png
 reference\HighPolyEnemies\<creature>\pose_side.png
 ```
 
-These are the vanilla bind poses, side on, on a plain background. Feed the
+These are the vanilla bind poses, side on, on a plain background. The whole
+animal is in frame (the camera distance is solved from the field of view, so
+nothing is cropped - the rearing bear and the mammoth both fit). Feed the
 image to your generator and ask for the same stance, e.g.:
 
 > *a high-poly Skyrim bear, standing on its hind legs, front paws raised,
@@ -85,6 +87,20 @@ Regenerate them with:
 ```
 blender --background --python src\scripts\05_render_pose_reference.py
 ```
+
+Name creatures to do only those (`... 05_render_pose_reference.py bear mammoth`)
+and add `--front` for a second view.
+
+### Where the delivered models go
+
+```
+raw_assets\<ModFolder>\<creature>\incoming\<name>.glb
+```
+
+with the textures in
+`raw_assets\<ModFolder>\<creature>\incoming\textures\actors\<creature>\`.
+The pipeline picks the first model file it finds, so the file name does not
+matter - but the pose has to be right.
 
 ### 2. Use the "Keep model proportions" fit
 

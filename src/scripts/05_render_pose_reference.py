@@ -114,12 +114,13 @@ def main() -> int:
                     mins[i] = min(mins[i], w[i])
                     maxs[i] = max(maxs[i], w[i])
         centre = [(mins[i] + maxs[i]) / 2 for i in range(3)]
-        radius = max(maxs[i] - mins[i] for i in range(3)) / 2 or 1.0
+        extent = [maxs[i] - mins[i] for i in range(3)]
 
         cam_data = bpy.data.cameras.new("cam")
         cam = bpy.data.objects.new("cam", cam_data)
         bpy.context.scene.collection.objects.link(cam)
         cam_data.lens = 55
+        cam_data.sensor_width = 36
         bpy.context.scene.camera = cam
 
         sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", type="SUN"))
@@ -139,23 +140,43 @@ def main() -> int:
         for ob in bpy.data.objects:
             ob.hide_render = ob.type != "MESH"
 
+        # The camera has to frame the body exactly, so the distance is solved
+        # from the field of view: a fixed multiple of the longest axis crops
+        # everything that is tall (the rearing bear) or long (the mammoth).
         scene = bpy.context.scene
         scene.render.resolution_x = args.width
         scene.render.resolution_y = args.height
         scene.render.image_settings.file_format = "PNG"
 
-        views = {"side": ((radius * 2.6, 0.0, 0.0), (90.0, 0.0, 90.0))}
-        if args.front:
-            views["front"] = ((0.0, -radius * 2.6, 0.0), (90.0, 0.0, 0.0))
+        aspect = args.width / args.height
+        sensor = cam_data.sensor_width
+        half_fov_x = math.atan((sensor / 2) / cam_data.lens)
+        # a landscape frame is shorter than it is wide
+        half_fov_y = math.atan((sensor / 2 * (1 / aspect)) / cam_data.lens)
 
-        for view, (offset, rot) in views.items():
-            cam.location = (centre[0] + offset[0], centre[1] + offset[1],
-                             centre[2] + offset[2])
+        def distance_for(width: float, height: float) -> float:
+            """How far back the camera has to be to fit width x height."""
+            need_x = (width / 2) / math.tan(half_fov_x)
+            need_y = (height / 2) / math.tan(half_fov_y)
+            return max(need_x, need_y) * 1.08
+
+        # side view: the camera looks along +X, so the image is the Y/Z plane
+        views = {
+            "side": ((extent[1], extent[2]), (1, 0, 0), (90.0, 0.0, 90.0)),
+            "front": ((extent[0], extent[2]), (0, -1, 0), (90.0, 0.0, 0.0)),
+        }
+        if not args.front:
+            views.pop("front")
+
+        for view, ((span_x, span_y), axis, rot) in views.items():
+            dist = distance_for(span_x, span_y)
+            cam.location = (centre[0] + axis[0] * dist, centre[1] + axis[1] * dist,
+                            centre[2])
             cam.rotation_euler = (math.radians(rot[0]), math.radians(rot[1]),
                                   math.radians(rot[2]))
             scene.render.filepath = str(out_dir / f"pose_{view}.png")
             bpy.ops.render.render(write_still=True)
-        size = (maxs[0] - mins[0], maxs[1] - mins[1], maxs[2] - mins[2])
+        size = (extent[0], extent[1], extent[2])
         print(f"  {name}: pose_side.png  size {size[0]:.0f} x {size[1]:.0f} x {size[2]:.0f}")
         done += 1
 
