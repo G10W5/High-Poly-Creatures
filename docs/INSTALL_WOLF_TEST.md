@@ -20,6 +20,12 @@ into your Skyrim data folder, so you end up with:
 <Data>\textures\actors\wolf\wolf_d.dds
 <Data>\textures\actors\wolf\wolf_n.dds
 <Data>\textures\actors\wolf\wolf_shell.dds
+<Data>\textures\actors\wolf\wolfblack_d.dds
+<Data>\textures\actors\wolf\wolfblack_shell.dds
+<Data>\textures\actors\wolf\wolfred_d.dds
+<Data>\textures\actors\wolf\wolfred_shell.dds
+<Data>\textures\actors\wolf\wolffire_d.dds
+<Data>\textures\actors\wolf\wolffire_shell.dds
 ```
 
 Your game is at:
@@ -64,7 +70,8 @@ replace ours.
 3. `player.placeatme <that id>` — spawn one, or just walk into the wilderness
    around Whiterun at night where wolves spawn.
 4. Also check the black/red/fire variants if you can: they all use the same
-   high-poly mesh now (they lost their colour differences — tinting is a to-do).
+   high-poly mesh, and each now keeps its own coat colour (black, red, fire
+   orange) - tinted from our own diffuse, see `config/variants.csv`.
 
 ## What to look for
 

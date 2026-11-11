@@ -1810,7 +1810,13 @@ def postprocess_nif(path: Path) -> str:
     return f"{len(patched)} fur/shell shapes patched"
 
 
-def do_export(context, creature: Creature, root: Path, keep_fur=True, keep_extra=False) -> str:
+def do_export(context, creature: Creature, root: Path, keep_fur=True, keep_extra=False,
+              out_path: Path | None = None) -> str:
+    """Export the model over the vanilla NIF's path.
+
+    out_path sends the result somewhere else - the shell test uses that so it
+    does not overwrite the production build with its own 5-layer model.
+    """
     model = objects_with("model")
     arms = objects_with("vanilla_armature")
     if not model or not arms:
@@ -1821,8 +1827,11 @@ def do_export(context, creature: Creature, root: Path, keep_fur=True, keep_extra
     nif = main_nif(root, creature)
     if not nif:
         raise RuntimeError("cannot determine vanilla output path")
-    relative = Path(nif).relative_to(ref_dir(root, creature))
-    out = root / "build" / MOD_FOLDERS[creature.mod] / relative
+    if out_path is None:
+        relative = Path(nif).relative_to(ref_dir(root, creature))
+        out = root / "build" / MOD_FOLDERS[creature.mod] / relative
+    else:
+        out = out_path
     out.parent.mkdir(parents=True, exist_ok=True)
 
     selection = [model, arm]

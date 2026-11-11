@@ -1,0 +1,5 @@
+mod,creature,variant,hue,sat,val,notes
+Creatures,wolf,wolfblack,0,0.7,0.45,Dark grey coat (vanilla WolfBLACK.dds)
+Creatures,wolf,wolfred,-15,1.8,1.05,Rust-red coat (vanilla WolfRED.dds)
+Creatures,wolf,wolffire,15,2.2,1.4,Fire-orange coat; vanilla uses an effect shader so this is an approximation
+Creatures,frostbitespider,frostbitespidercold,180,2.0,1.2,Cold blue-white coat (vanilla FrostSpider.dds)

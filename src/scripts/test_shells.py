@@ -47,7 +47,8 @@ print("rig:    ", hp.do_transfer_weights(bpy.context))
 print("material:", hp.do_setup_material(bpy.context, c, root))
 print("fur:    ", hp.do_make_fur(bpy.context, c, root, s))
 print("shells: ", hp.do_make_shells(bpy.context, c, root, s))
-print("export: ", hp.do_export(bpy.context, c, root, s.keep_fur, s.keep_extra_vanilla))
+print("export: ", hp.do_export(bpy.context, c, root, s.keep_fur, s.keep_extra_vanilla,
+                               out_path=root / "build" / "_tests" / "wolf_shells.nif"))
 
 # --- 0. fur cards ------------------------------------------------------------
 fur_objs = hp.objects_with("fur")
@@ -97,8 +98,9 @@ else:
     grown = True   # no shell layers requested - nothing to grow
 
 # --- 3. exported NIF --------------------------------------------------------
-out = root / "build" / "HighPolyCreatures" / "meshes" / "actors" / "canine" / \
-    "character assets wolf" / "wolf.nif"
+# the export goes to its own file: this test builds a 5-layer model and must
+# not overwrite the production wolf.nif in build/
+out = root / "build" / "_tests" / "wolf_shells.nif"
 nif = NifFile(str(out))
 names = [sh.name for sh in nif.shapes]
 nif_shapes = list(nif.shapes)

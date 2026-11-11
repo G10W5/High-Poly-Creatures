@@ -20,6 +20,11 @@ c = hp.find_creature(ROOT, "Creatures", "wolf")
 s = bpy.context.scene.hp
 s.mod, s.creature = "Creatures", "wolf"
 
+# This test paints the mask and rebuilds the shell, and both live in the
+# production texture folder - so keep a copy and put the originals back.
+tex_dir = hp.incoming_dir(ROOT, c) / "textures" / "actors" / "wolf"
+backup = {p.name: p.read_bytes() for p in tex_dir.glob("*.png")}
+
 # 1. the mask is created from the diffuse's coverage
 mask = hp.ensure_fur_mask(ROOT, c)
 print("=== mask created:", mask.name, tuple(mask.size),
@@ -64,3 +69,9 @@ print(f"    shell alpha where mask = 0 : {np.nanmean(sp[:, : w // 8]):.3f} (expe
 print(f"    shell alpha where mask = 1 : {np.nanmean(sp[:, w // 4:w // 2]):.3f} (expect 0.3-1.0)")
 ok = (np.nanmax(sp[:, : w // 8]) < 0.05 and 0.2 < np.nanmean(sp[:, w // 4:w // 2]))
 print("=== RESULT:", "MASK TEST OK" if ok else "MASK TEST FAILED")
+
+# put the production textures back - the painted mask and the striped shell
+# must not survive the test
+for name, data in backup.items():
+    (tex_dir / name).write_bytes(data)
+print(f"    restored {len(backup)} production texture(s)")

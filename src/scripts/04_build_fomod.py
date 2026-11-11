@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from xml.dom import minidom
 
+from variants import load_variants, retarget_nif
+
 ROOT = Path(__file__).resolve().parents[2]
 MOD_FOLDERS = {"Creatures": "HighPolyCreatures", "Enemies": "HighPolyEnemies"}
 MOD_NAMES = {"Creatures": "High Poly Creatures", "Enemies": "High Poly Enemies"}
@@ -121,7 +123,11 @@ def expand_variants(mod: str, creatures: list[Creature]) -> int:
     different textures; the AI model replaces all of them, so every wolf in game
     changes instead of only one in four. Variant NIFs are found in reference/
     under the same prefixes the creature owns.
+
+    The ones in config/variants.csv are colour variants: they get their own
+    tinted textures, so their Diffuse slot is repointed after the copy.
     """
+    variant_rows = load_variants()
     ref_root = ROOT / "reference" / MOD_FOLDERS[mod]
     added = 0
     for c in creatures:
@@ -152,6 +158,10 @@ def expand_variants(mod: str, creatures: list[Creature]) -> int:
         for ref, out in variants:
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(main.read_bytes())
+            # a colour variant needs its own textures, not the body's
+            row = variant_rows.get((c.name.lower(), ref.stem.lower()))
+            if row:
+                retarget_nif(out, c.name, row.variant)
             if out not in c.files:
                 c.files.append(out)
             added += 1

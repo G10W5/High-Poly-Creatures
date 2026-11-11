@@ -46,7 +46,9 @@ py src/scripts/01_inventory.py         # probe every NIF and write bone_contract
 py src/scripts/02_check_incoming.py    # per-creature delivery status
 py src/scripts/03_build_textures.py    # PNG -> BC7 DDS into build/ (add --preset balanced|small)
 py src/scripts/04_build_fomod.py       # zip build/ into dist/ with a FOMOD (add --list, --version)
+py src/scripts/08_build_variants.py    # colour variants (config/variants.csv) - run after 07, before 04
 py src/scripts/test_pipeline.py        # headless regression test of the Blender addon (wolf)
+py src/scripts/test_variants.py        # the tinted coats and the repointed variant NIFs
 py src/scripts/verify_nif.py           # shapes / bones / partitions / textures of a built NIF
 ```
 
@@ -153,6 +155,29 @@ are visible from every angle.  Cheaper than the layers, but reads as *spiky
 bristles* rather than a soft coat.  Set the CSV `fur` column to `cards` for a
 creature that should get these.
 
+### Colour variants
+
+Some vanilla animals come in several coats over one skeleton - `wolf.nif`,
+`wolfblack.nif`, `wolfred.nif` and `wolffire.nif` are the same mesh with
+different textures.  We deliver one texture per animal, so the other coats are
+derived from ours: `config/variants.csv` holds a **hue shift (degrees)** and
+**saturation / value multipliers** per variant, and `08_build_variants.py`
+applies them to the diffuse *and* to the fur shell, then repoints a copy of
+the body NIF at the result.
+
+```csv
+mod,creature,variant,hue,sat,val,notes
+Creatures,wolf,wolfblack,0,0.7,0.45,Dark grey coat (vanilla WolfBLACK.dds)
+Creatures,wolf,wolfred,-15,1.8,1.05,Rust-red coat (vanilla WolfRED.dds)
+```
+
+The shell's **alpha is left alone** - it is the strand mask, so the fur pattern
+stays identical and only the colour moves.  The normal map and the `_sk`
+lighting map stay shared with the base animal, exactly like vanilla does.
+
+The tinted coats are generated from **our own** diffuse, so they ship under the
+same asset-provenance rules as everything else.
+
 ## Tools installed
 
 - `tools/pynifly/io_scene_nifly` — PyNifly 30.3.0. Usable from plain Python
@@ -204,6 +229,7 @@ Two things to keep watching:
 
 ```
 config/creatures.csv   master list: mod, FOMOD page, creature, category, vanilla prefixes
+config/variants.csv    colour variants per creature: hue / saturation / value shifts
 reference/             extracted vanilla NIFs + contracts (generated, git-ignored)
 raw_assets/            model deliveries + generated spec.md per creature
 src/scripts/           pipeline scripts
